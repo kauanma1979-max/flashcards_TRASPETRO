@@ -19,6 +19,7 @@ interface MacroDisciplineCardProps {
   key?: string;
   macro: MacroDiscipline;
   allCards: Flashcard[];
+  deckProgressMap?: Record<string, { currentIndex: number; totalCards: number; updatedAt: string }>;
   onSelectTheme: (theme: ThemeDeck) => void;
   onStudyMacro: (macro: MacroDiscipline) => void;
 }
@@ -26,6 +27,7 @@ interface MacroDisciplineCardProps {
 export function MacroDisciplineCard({
   macro,
   allCards,
+  deckProgressMap = {},
   onSelectTheme,
   onStudyMacro
 }: MacroDisciplineCardProps) {
@@ -35,6 +37,7 @@ export function MacroDisciplineCard({
   const dueCount = macroCards.filter(isCardDue).length;
   const mistakesCount = macroCards.filter(c => c.errorCount > 0).length;
   const masteryPercentage = totalCount > 0 ? Math.round((masteredCount / totalCount) * 100) : 0;
+  const macroProgress = deckProgressMap[macro.id];
 
   // Icon mapping
   const renderMacroIcon = () => {
@@ -77,10 +80,18 @@ export function MacroDisciplineCard({
 
           <button
             onClick={() => onStudyMacro(macro)}
-            className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/20 hover:bg-white text-white hover:text-zinc-900 text-xs font-bold transition border border-white/30 backdrop-blur-xs shadow-xs"
+            className={`hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition border backdrop-blur-xs shadow-xs ${
+              macroProgress && macroProgress.currentIndex > 0
+                ? 'bg-amber-400 text-amber-950 hover:bg-amber-300 border-amber-300'
+                : 'bg-white/20 hover:bg-white text-white hover:text-zinc-900 border-white/30'
+            }`}
           >
             <PlayCircle className="w-4 h-4" />
-            <span>Revisar Macro</span>
+            <span>
+              {macroProgress && macroProgress.currentIndex > 0
+                ? `Continuar (Card ${macroProgress.currentIndex + 1})`
+                : 'Revisar Macro'}
+            </span>
           </button>
         </div>
 
@@ -153,9 +164,16 @@ export function MacroDisciplineCard({
                     <h4 className="font-bold text-sm text-zinc-800 group-hover:text-emerald-700 transition leading-snug">
                       {theme.title}
                     </h4>
-                    <span className="px-2 py-0.5 rounded text-[11px] font-bold font-mono-numbers bg-zinc-100 text-zinc-700 shrink-0">
-                      {themeTotal} cards
-                    </span>
+                    {deckProgressMap[theme.id] && deckProgressMap[theme.id].currentIndex > 0 ? (
+                      <span className="px-2 py-0.5 rounded text-[11px] font-bold font-mono-numbers bg-amber-100 text-amber-900 border border-amber-300 flex items-center gap-1 shrink-0">
+                        <PlayCircle className="w-3 h-3 text-amber-700" />
+                        Card {deckProgressMap[theme.id].currentIndex + 1}/{themeTotal}
+                      </span>
+                    ) : (
+                      <span className="px-2 py-0.5 rounded text-[11px] font-bold font-mono-numbers bg-zinc-100 text-zinc-700 shrink-0">
+                        {themeTotal} cards
+                      </span>
+                    )}
                   </div>
                   <p className="text-[12px] text-zinc-500 line-clamp-2 leading-relaxed">
                     {theme.description}

@@ -556,7 +556,7 @@ export const MACRO_2_CARDS: Flashcard[] = [
   },
   {
     id: 'm2_c27',
-    macroId: 'macro_processos_adm',
+    macroId: 'macro_financas_contab',
     themeId: 'theme_contab_balanco_dre',
     question: 'Qual a diferença contábil entre Desconto Incondicional e Desconto Condicional na DRE?',
     answer: 'Incondicional (comercial): concedido no ato da venda (por volume/negociação), é dedução direta da receita bruta. Condicional (financeiro): concedido por pontualidade no pagamento, é despesa financeira.',

@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, MouseEvent } from 'react';
 import confetti from 'canvas-confetti';
 import { 
   RotateCw, 
+  RotateCcw,
   Lightbulb, 
   Check, 
   X, 
@@ -28,23 +29,52 @@ import { calculateXpEarned } from '../utils/spacedRepetition';
 interface StudySessionProps {
   deckTitle: string;
   cards: Flashcard[];
+  initialIndex?: number;
+  initialReviews?: { cardId: string; rating: Rating }[];
+  onCardAnswered?: (cardId: string, rating: Rating, nextIndex: number, allReviews: { cardId: string; rating: Rating }[]) => void;
   onFinishSession: (result: SessionResult, updatedCards: { cardId: string; rating: Rating }[]) => void;
-  onExit: () => void;
+  onExit: (currentIndex: number, currentReviews: { cardId: string; rating: Rating }[]) => void;
+  onRestart?: () => void;
 }
 
 export function StudySession({
   deckTitle,
   cards,
+  initialIndex = 0,
+  initialReviews = [],
+  onCardAnswered,
   onFinishSession,
-  onExit
+  onExit,
+  onRestart
 }: StudySessionProps) {
-  const [currentIndex, setCurrentIndex] = useState(0);
+  const [currentIndex, setCurrentIndex] = useState(
+    initialIndex >= 0 && initialIndex < cards.length ? initialIndex : 0
+  );
   const [isFlipped, setIsFlipped] = useState(false);
   const [showTip, setShowTip] = useState(false);
   const [combo, setCombo] = useState(0);
-  const [sessionReviews, setSessionReviews] = useState<{ cardId: string; rating: Rating }[]>([]);
+  const [sessionReviews, setSessionReviews] = useState<{ cardId: string; rating: Rating }[]>(initialReviews);
   const [isCompleted, setIsCompleted] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [isRestartConfirmOpen, setIsRestartConfirmOpen] = useState(false);
+
+  const handleConfirmRestart = () => {
+    stopSpeaking();
+    setIsRestartConfirmOpen(false);
+    setCurrentIndex(0);
+    setSessionReviews([]);
+    setIsFlipped(false);
+    setShowTip(false);
+    setCombo(0);
+    onRestart?.();
+  };
+
+  // Sync index if initialIndex changes externally
+  useEffect(() => {
+    if (initialIndex >= 0 && initialIndex < cards.length) {
+      setCurrentIndex(initialIndex);
+    }
+  }, [initialIndex, cards.length]);
 
   const currentCard = cards[currentIndex];
   const progressPercent = cards.length > 0 ? Math.round(((currentIndex) / cards.length) * 100) : 0;
@@ -100,12 +130,18 @@ export function StudySession({
     const nextReviews = [...sessionReviews, { cardId: currentCard.id, rating }];
     setSessionReviews(nextReviews);
 
+    // Persist answer immediately in real-time so nothing is lost
+    const nextIndex = currentIndex + 1;
+    if (onCardAnswered) {
+      onCardAnswered(currentCard.id, rating, nextIndex, nextReviews);
+    }
+
     // Reset card view state
     setIsFlipped(false);
     setShowTip(false);
 
-    if (currentIndex + 1 < cards.length) {
-      setCurrentIndex(prev => prev + 1);
+    if (nextIndex < cards.length) {
+      setCurrentIndex(nextIndex);
     } else {
       // Completed all cards in this session!
       setIsCompleted(true);
@@ -126,7 +162,7 @@ export function StudySession({
         playLevelUpFanfare();
       }
     }
-  }, [currentCard, combo, sessionReviews, currentIndex, cards.length]);
+  }, [currentCard, combo, sessionReviews, currentIndex, cards.length, onCardAnswered]);
 
   // Keyboard navigation
   useEffect(() => {
@@ -271,13 +307,60 @@ export function StudySession({
       
       {/* Top Header: Navigation & Progress */}
       <div className="flex items-center justify-between gap-3 mb-4">
-        <button
-          onClick={onExit}
-          className="flex items-center gap-1.5 text-xs font-bold text-zinc-500 hover:text-zinc-900 transition px-2 py-1 rounded-md hover:bg-zinc-100"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          <span>Sair da Sessão</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => {
+              stopSpeaking();
+              onExit(currentIndex, sessionReviews);
+            }}
+            className="flex items-center gap-1.5 text-xs font-bold text-zinc-600 hover:text-zinc-900 transition px-2.5 py-1.5 rounded-lg hover:bg-zinc-100 border border-zinc-200 shadow-2xs"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            <span>Salvar & Sair</span>
+          </button>
+
+          {currentIndex > 0 && onRestart && (
+            <button
+              onClick={() => setIsRestartConfirmOpen(true)}
+              className="text-xs font-semibold text-zinc-500 hover:text-amber-700 hover:underline px-2 py-1 rounded transition flex items-center gap-1 hover:bg-amber-50"
+              title="Reiniciar esta sessão a partir do primeiro card"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Reiniciar do 1º card</span>
+            </button>
+          )}
+        </div>
+
+        {/* Modal de Confirmação: Reiniciar do 1º card */}
+        {isRestartConfirmOpen && (
+          <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl border border-zinc-200 animate-in fade-in zoom-in duration-150">
+              <div className="w-12 h-12 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center mb-4">
+                <RotateCcw className="w-6 h-6" />
+              </div>
+              <h3 className="font-extrabold text-base text-zinc-900 mb-1.5">
+                Reiniciar do 1º card?
+              </h3>
+              <p className="text-xs text-zinc-600 leading-relaxed mb-5">
+                Ao reiniciar, <strong>nenhum dos cards respondidos nesta tentativa será contabilizado</strong> no seu histórico, repetição espaçada ou estatísticas. A sessão recomeçará do zero.
+              </p>
+              <div className="flex items-center gap-2.5">
+                <button
+                  onClick={() => setIsRestartConfirmOpen(false)}
+                  className="flex-1 py-2.5 rounded-xl border border-zinc-200 text-zinc-700 text-xs font-bold hover:bg-zinc-100 transition"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleConfirmRestart}
+                  className="flex-1 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold transition shadow-xs"
+                >
+                  Sim, Reiniciar
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="flex items-center gap-3">
           {/* Combo badge */}
@@ -289,7 +372,7 @@ export function StudySession({
           )}
 
           <span className="text-xs font-bold text-zinc-500 font-mono-numbers">
-            {currentIndex + 1} de {cards.length}
+            Card {currentIndex + 1} de {cards.length}
           </span>
         </div>
       </div>

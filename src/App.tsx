@@ -21,7 +21,8 @@ import {
   StudyAlarmConfig, 
   GamificationBadge, 
   SessionResult, 
-  Rating 
+  Rating,
+  ActiveSessionState
 } from './types';
 import { INITIAL_MACRO_DISCIPLINES } from './data/transpetroCards';
 import { 
@@ -33,14 +34,26 @@ import {
   getStoredBadges, 
   saveBadges, 
   getStoredAlarm, 
-  saveAlarm 
+  saveAlarm,
+  getStoredActiveSession,
+  saveActiveSession,
+  clearActiveSession,
+  getDeckProgressMap,
+  saveDeckProgress,
+  clearDeckProgress,
+  resetCardsByIds,
+  resetMacroCards,
+  resetAllCards,
+  recalculateStatsFromCards,
+  getInitialUserStats
 } from './utils/storage';
 import { 
   calculateSpacedRepetition, 
   calculateXpEarned, 
   checkBadges, 
   isCardDue,
-  getLevelForXp
+  getLevelForXp,
+  INITIAL_BADGES
 } from './utils/spacedRepetition';
 import { playStudyAlarm, stopStudyAlarm } from './utils/audio';
 
@@ -52,6 +65,19 @@ import { ProgressDashboard } from './components/ProgressDashboard';
 import { StudyAlarmModal } from './components/StudyAlarmModal';
 import { AddCardModal } from './components/AddCardModal';
 
+interface ActiveSession {
+  sessionKey: string;
+  title: string;
+  macroId?: string;
+  themeId?: string;
+  cards: Flashcard[];
+  currentIndex: number;
+  sessionReviews: { cardId: string; rating: Rating }[];
+  initialCardsSnapshot: Flashcard[];
+  initialStatsSnapshot: UserStats;
+  initialBadgesSnapshot: GamificationBadge[];
+}
+
 export default function App() {
   // Application Data States
   const [cards, setCards] = useState<Flashcard[]>([]);
@@ -61,7 +87,9 @@ export default function App() {
   
   // Navigation & Session View States
   const [currentView, setCurrentView] = useState<'home' | 'deck' | 'erros' | 'stats' | 'alarm'>('home');
-  const [activeSession, setActiveSession] = useState<{ title: string; cards: Flashcard[] } | null>(null);
+  const [activeSession, setActiveSession] = useState<ActiveSession | null>(null);
+  const [savedActiveSession, setSavedActiveSession] = useState<ActiveSessionState | null>(null);
+  const [deckProgressMap, setDeckProgressMap] = useState<Record<string, { currentIndex: number; totalCards: number; updatedAt: string }>>({});
 
   // Modal Dialogs
   const [isAddCardOpen, setIsAddCardOpen] = useState(false);
@@ -74,10 +102,46 @@ export default function App() {
   // Ref to avoid duplicate alarms in the same minute
   const lastAlarmTriggerRef = useRef<string>('');
 
-  // Initialize cards on mount
+  // Initialize cards, saved session on mount and reconcile any restarted decks
   useEffect(() => {
     const loadedCards = getStoredCards();
-    setCards(loadedCards);
+    let currentStats = getStoredStats();
+    let currentBadges = getStoredBadges();
+    const saved = getStoredActiveSession();
+    let reconciledCards = loadedCards;
+
+    // Check if a saved session was restarted (index 0 or empty reviews)
+    if (saved && (saved.currentIndex === 0 || !saved.sessionReviews || saved.sessionReviews.length === 0)) {
+      const hasAnswered = saved.cardIds.some(id => {
+        const c = loadedCards.find(card => card.id === id);
+        return c && (c.status !== 'novo' || (c.repetitionCount || 0) > 0);
+      });
+      if (hasAnswered) {
+        reconciledCards = resetCardsByIds(loadedCards, saved.cardIds);
+        currentStats = recalculateStatsFromCards(reconciledCards, currentStats);
+        currentBadges = checkBadges(currentStats, reconciledCards, currentBadges);
+        saveBadges(currentBadges);
+      }
+    }
+
+    // Reconcile stats in case totalReviews is out of sync with actual card reviews
+    let totalCardReviews = 0;
+    reconciledCards.forEach(c => {
+      totalCardReviews += ((c.repetitionCount || 0) + (c.errorCount || 0));
+    });
+    if (totalCardReviews === 0 && currentStats.totalReviews > 0) {
+      currentStats = recalculateStatsFromCards(reconciledCards, currentStats);
+      currentBadges = checkBadges(currentStats, reconciledCards, currentBadges);
+      saveBadges(currentBadges);
+    }
+
+    setCards(reconciledCards);
+    setStats(currentStats);
+    setBadges(currentBadges);
+    setDeckProgressMap(getDeckProgressMap());
+    if (saved && saved.currentIndex > 0) {
+      setSavedActiveSession(saved);
+    }
   }, []);
 
   // Alarm & Pomodoro background timer loop
@@ -140,58 +204,27 @@ export default function App() {
   const mistakeCards = cards.filter(c => (c.errorCount || 0) > 0 || c.status === 'aprendendo');
   const dueCards = cards.filter(isCardDue);
 
-  // Start study session for a specific sub-theme
-  const handleSelectTheme = (theme: ThemeDeck) => {
-    const themeCards = cards.filter(c => c.themeId === theme.id);
-    if (themeCards.length === 0) return;
-    setActiveSession({
-      title: theme.title,
-      cards: themeCards
-    });
-    setCurrentView('deck');
-  };
-
-  // Start study session for entire macro discipline
-  const handleStudyMacro = (macro: MacroDiscipline) => {
-    const macroCards = cards.filter(c => c.macroId === macro.id);
-    if (macroCards.length === 0) return;
-    setActiveSession({
-      title: macro.name,
-      cards: macroCards
-    });
-    setCurrentView('deck');
-  };
-
-  // Start revision for all due cards
-  const handleStudyAllDue = () => {
-    if (dueCards.length === 0) return;
-    setActiveSession({
-      title: 'Revisão Espaçada Diária (Pendentes)',
-      cards: dueCards
-    });
-    setCurrentView('deck');
-  };
-
-  // Start revision of mistaken cards
-  const handleStartReviewMistakes = (cardsToReview: Flashcard[]) => {
-    if (cardsToReview.length === 0) return;
-    setActiveSession({
-      title: 'Revisão Intensiva: Caderno de Erros',
-      cards: cardsToReview
-    });
-    setCurrentView('deck');
-  };
-
-  // Finish study session handler
-  const handleFinishSession = (
-    result: SessionResult,
-    sessionReviews: { cardId: string; rating: Rating }[]
+  // Helper to consolidate reviews into cards and user stats
+  const consolidateReviews = (
+    baseCards: Flashcard[],
+    baseStats: UserStats,
+    baseBadges: GamificationBadge[],
+    reviews: { cardId: string; rating: Rating }[],
+    accuracy?: number
   ) => {
-    let updatedCards = [...cards];
-    let totalXpEarned = 0;
+    if (reviews.length === 0) {
+      return {
+        updatedCards: baseCards,
+        updatedStats: baseStats,
+        updatedBadges: baseBadges
+      };
+    }
+
+    let updatedCards = [...baseCards];
+    let totalXp = 0;
     let anyCorrect = false;
 
-    sessionReviews.forEach(({ cardId, rating }) => {
+    reviews.forEach(({ cardId, rating }) => {
       const idx = updatedCards.findIndex(c => c.id === cardId);
       if (idx !== -1) {
         const updated = calculateSpacedRepetition(updatedCards[idx], rating);
@@ -200,24 +233,470 @@ export default function App() {
         const isCorrect = rating === 'bom' || rating === 'facil';
         if (isCorrect) anyCorrect = true;
         const xp = calculateXpEarned(rating, 1);
-        totalXpEarned += xp;
+        totalXp += xp;
       }
     });
 
-    // Update stats
-    const newStats = updateStatsOnStudy(stats, anyCorrect, totalXpEarned);
-    setStats(newStats);
+    const updatedStats = updateStatsOnStudy(baseStats, anyCorrect, totalXp);
+    const updatedBadges = checkBadges(updatedStats, updatedCards, baseBadges, accuracy);
 
-    // Check badges
-    const updatedBadges = checkBadges(newStats, updatedCards, badges, result.accuracy);
+    return {
+      updatedCards,
+      updatedStats,
+      updatedBadges
+    };
+  };
+
+  // Resume saved in-progress study session
+  const handleResumeSavedSession = () => {
+    const stored = savedActiveSession || getStoredActiveSession();
+    if (!stored) return;
+
+    const sessionCards = stored.cardIds
+      .map(id => cards.find(c => c.id === id))
+      .filter((c): c is Flashcard => !!c);
+
+    if (sessionCards.length === 0) {
+      clearActiveSession();
+      setSavedActiveSession(null);
+      return;
+    }
+
+    const session: ActiveSession = {
+      sessionKey: stored.sessionKey,
+      title: stored.title,
+      macroId: stored.macroId,
+      themeId: stored.themeId,
+      cards: sessionCards,
+      currentIndex: Math.min(stored.currentIndex, sessionCards.length - 1),
+      sessionReviews: stored.sessionReviews || [],
+      initialCardsSnapshot: stored.initialCardsSnapshot || JSON.parse(JSON.stringify(cards)),
+      initialStatsSnapshot: stored.initialStatsSnapshot || JSON.parse(JSON.stringify(stats)),
+      initialBadgesSnapshot: stored.initialBadgesSnapshot || JSON.parse(JSON.stringify(badges))
+    };
+
+    setActiveSession(session);
+    setCurrentView('deck');
+  };
+
+  // Discard saved in-progress study session
+  const handleDiscardSavedSession = () => {
+    if (savedActiveSession) {
+      if (savedActiveSession.initialCardsSnapshot) {
+        setCards(savedActiveSession.initialCardsSnapshot);
+        saveCards(savedActiveSession.initialCardsSnapshot);
+      }
+      if (savedActiveSession.initialStatsSnapshot) {
+        setStats(savedActiveSession.initialStatsSnapshot);
+        saveStats(savedActiveSession.initialStatsSnapshot);
+      }
+      if (savedActiveSession.initialBadgesSnapshot) {
+        setBadges(savedActiveSession.initialBadgesSnapshot);
+        saveBadges(savedActiveSession.initialBadgesSnapshot);
+      }
+      clearDeckProgress(savedActiveSession.sessionKey);
+    }
+    clearActiveSession();
+    setSavedActiveSession(null);
+    setDeckProgressMap(getDeckProgressMap());
+  };
+
+  // Start study session for a specific sub-theme
+  const handleSelectTheme = (theme: ThemeDeck) => {
+    const themeCards = cards.filter(c => c.themeId === theme.id);
+    if (themeCards.length === 0) return;
+
+    const stored = getStoredActiveSession();
+    const progress = getDeckProgressMap()[theme.id];
+
+    let startIndex = 0;
+    let reviews: { cardId: string; rating: Rating }[] = [];
+    let initialCardsSnap = JSON.parse(JSON.stringify(cards));
+    let initialStatsSnap = JSON.parse(JSON.stringify(stats));
+    let initialBadgesSnap = JSON.parse(JSON.stringify(badges));
+
+    if (stored && stored.sessionKey === theme.id && stored.currentIndex < themeCards.length) {
+      startIndex = stored.currentIndex;
+      reviews = stored.sessionReviews || [];
+      if (stored.initialCardsSnapshot) initialCardsSnap = stored.initialCardsSnapshot;
+      if (stored.initialStatsSnapshot) initialStatsSnap = stored.initialStatsSnapshot;
+      if (stored.initialBadgesSnapshot) initialBadgesSnap = stored.initialBadgesSnapshot;
+    } else if (progress && progress.currentIndex > 0 && progress.currentIndex < themeCards.length) {
+      startIndex = progress.currentIndex;
+    }
+
+    const session: ActiveSession = {
+      sessionKey: theme.id,
+      title: theme.title,
+      macroId: theme.macroId,
+      themeId: theme.id,
+      cards: themeCards,
+      currentIndex: startIndex,
+      sessionReviews: reviews,
+      initialCardsSnapshot: initialCardsSnap,
+      initialStatsSnapshot: initialStatsSnap,
+      initialBadgesSnapshot: initialBadgesSnap
+    };
+
+    const sessionState: ActiveSessionState = {
+      sessionKey: theme.id,
+      title: theme.title,
+      macroId: theme.macroId,
+      themeId: theme.id,
+      cardIds: themeCards.map(c => c.id),
+      currentIndex: startIndex,
+      sessionReviews: reviews,
+      initialCardsSnapshot: initialCardsSnap,
+      initialStatsSnapshot: initialStatsSnap,
+      initialBadgesSnapshot: initialBadgesSnap,
+      updatedAt: new Date().toISOString()
+    };
+
+    setActiveSession(session);
+    saveActiveSession(sessionState);
+    setSavedActiveSession(sessionState);
+    setCurrentView('deck');
+  };
+
+  // Start study session for entire macro discipline
+  const handleStudyMacro = (macro: MacroDiscipline) => {
+    const macroCards = cards.filter(c => c.macroId === macro.id);
+    if (macroCards.length === 0) return;
+
+    const stored = getStoredActiveSession();
+    const progress = getDeckProgressMap()[macro.id];
+
+    let startIndex = 0;
+    let reviews: { cardId: string; rating: Rating }[] = [];
+    let initialCardsSnap = JSON.parse(JSON.stringify(cards));
+    let initialStatsSnap = JSON.parse(JSON.stringify(stats));
+    let initialBadgesSnap = JSON.parse(JSON.stringify(badges));
+
+    if (stored && stored.sessionKey === macro.id && stored.currentIndex < macroCards.length) {
+      startIndex = stored.currentIndex;
+      reviews = stored.sessionReviews || [];
+      if (stored.initialCardsSnapshot) initialCardsSnap = stored.initialCardsSnapshot;
+      if (stored.initialStatsSnapshot) initialStatsSnap = stored.initialStatsSnapshot;
+      if (stored.initialBadgesSnapshot) initialBadgesSnap = stored.initialBadgesSnapshot;
+    } else if (progress && progress.currentIndex > 0 && progress.currentIndex < macroCards.length) {
+      startIndex = progress.currentIndex;
+    }
+
+    const session: ActiveSession = {
+      sessionKey: macro.id,
+      title: macro.name,
+      macroId: macro.id,
+      cards: macroCards,
+      currentIndex: startIndex,
+      sessionReviews: reviews,
+      initialCardsSnapshot: initialCardsSnap,
+      initialStatsSnapshot: initialStatsSnap,
+      initialBadgesSnapshot: initialBadgesSnap
+    };
+
+    const sessionState: ActiveSessionState = {
+      sessionKey: macro.id,
+      title: macro.name,
+      macroId: macro.id,
+      cardIds: macroCards.map(c => c.id),
+      currentIndex: startIndex,
+      sessionReviews: reviews,
+      initialCardsSnapshot: initialCardsSnap,
+      initialStatsSnapshot: initialStatsSnap,
+      initialBadgesSnapshot: initialBadgesSnap,
+      updatedAt: new Date().toISOString()
+    };
+
+    setActiveSession(session);
+    saveActiveSession(sessionState);
+    setSavedActiveSession(sessionState);
+    setCurrentView('deck');
+  };
+
+  // Start revision for all due cards
+  const handleStudyAllDue = () => {
+    if (dueCards.length === 0) return;
+    const initialCardsSnap = JSON.parse(JSON.stringify(cards));
+    const initialStatsSnap = JSON.parse(JSON.stringify(stats));
+    const initialBadgesSnap = JSON.parse(JSON.stringify(badges));
+
+    const session: ActiveSession = {
+      sessionKey: 'all_due_reviews',
+      title: 'Revisão Espaçada Diária (Pendentes)',
+      cards: dueCards,
+      currentIndex: 0,
+      sessionReviews: [],
+      initialCardsSnapshot: initialCardsSnap,
+      initialStatsSnapshot: initialStatsSnap,
+      initialBadgesSnapshot: initialBadgesSnap
+    };
+    setActiveSession(session);
+    setCurrentView('deck');
+  };
+
+  // Start revision of mistaken cards
+  const handleStartReviewMistakes = (cardsToReview: Flashcard[]) => {
+    if (cardsToReview.length === 0) return;
+    const initialCardsSnap = JSON.parse(JSON.stringify(cards));
+    const initialStatsSnap = JSON.parse(JSON.stringify(stats));
+    const initialBadgesSnap = JSON.parse(JSON.stringify(badges));
+
+    const session: ActiveSession = {
+      sessionKey: 'caderno_erros_intensivo',
+      title: 'Revisão Intensiva: Caderno de Erros',
+      cards: cardsToReview,
+      currentIndex: 0,
+      sessionReviews: [],
+      initialCardsSnapshot: initialCardsSnap,
+      initialStatsSnapshot: initialStatsSnap,
+      initialBadgesSnapshot: initialBadgesSnap
+    };
+    setActiveSession(session);
+    setCurrentView('deck');
+  };
+
+  // Immediate card rating handler: updates active session state & saves progress in real time
+  // Note: Card SM-2 stats are NOT permanently committed here so that if the user restarts from the 1st card, nothing is counted!
+  const handleCardAnswered = (
+    _cardId: string,
+    _rating: Rating,
+    nextIndex: number,
+    allReviews: { cardId: string; rating: Rating }[]
+  ) => {
+    if (activeSession) {
+      const updatedSessionState: ActiveSessionState = {
+        sessionKey: activeSession.sessionKey,
+        title: activeSession.title,
+        macroId: activeSession.macroId,
+        themeId: activeSession.themeId,
+        cardIds: activeSession.cards.map(c => c.id),
+        currentIndex: nextIndex,
+        sessionReviews: allReviews,
+        initialCardsSnapshot: activeSession.initialCardsSnapshot,
+        initialStatsSnapshot: activeSession.initialStatsSnapshot,
+        initialBadgesSnapshot: activeSession.initialBadgesSnapshot,
+        updatedAt: new Date().toISOString()
+      };
+      saveActiveSession(updatedSessionState);
+      saveDeckProgress(activeSession.sessionKey, nextIndex, activeSession.cards.length);
+      setSavedActiveSession(updatedSessionState);
+      setDeckProgressMap(getDeckProgressMap());
+      setActiveSession(prev => prev ? { ...prev, currentIndex: nextIndex, sessionReviews: allReviews } : null);
+    }
+  };
+
+  // Exit study session handler - saves & commits progress up to this point because user did NOT restart
+  const handleExitSession = (lastIndex: number, reviews: { cardId: string; rating: Rating }[]) => {
+    if (activeSession) {
+      // If at card 0 with no reviews, do not commit
+      if (lastIndex === 0 && reviews.length === 0) {
+        clearActiveSession();
+        clearDeckProgress(activeSession.sessionKey);
+        setSavedActiveSession(null);
+        setDeckProgressMap(getDeckProgressMap());
+        setActiveSession(null);
+        setCurrentView('home');
+        return;
+      }
+
+      // Since the user did NOT click restart, we commit the cards answered so far
+      const { updatedCards, updatedStats, updatedBadges } = consolidateReviews(
+        activeSession.initialCardsSnapshot,
+        activeSession.initialStatsSnapshot,
+        activeSession.initialBadgesSnapshot,
+        reviews
+      );
+      setCards(updatedCards);
+      saveCards(updatedCards);
+      setStats(updatedStats);
+      saveStats(updatedStats);
+      setBadges(updatedBadges);
+      saveBadges(updatedBadges);
+
+      const updatedSessionState: ActiveSessionState = {
+        sessionKey: activeSession.sessionKey,
+        title: activeSession.title,
+        macroId: activeSession.macroId,
+        themeId: activeSession.themeId,
+        cardIds: activeSession.cards.map(c => c.id),
+        currentIndex: lastIndex,
+        sessionReviews: reviews,
+        initialCardsSnapshot: activeSession.initialCardsSnapshot,
+        initialStatsSnapshot: activeSession.initialStatsSnapshot,
+        initialBadgesSnapshot: activeSession.initialBadgesSnapshot,
+        updatedAt: new Date().toISOString()
+      };
+      saveActiveSession(updatedSessionState);
+      saveDeckProgress(activeSession.sessionKey, lastIndex, activeSession.cards.length);
+      setSavedActiveSession(updatedSessionState);
+      setDeckProgressMap(getDeckProgressMap());
+    }
+    setCurrentView('home');
+  };
+
+  // Restart study session from first card
+  // CRITICAL RULE: Since the user clicked restart from first card, NONE of the cards in this session are counted!
+  const handleRestartSession = () => {
+    if (activeSession) {
+      const sessionCardIds = activeSession.cards.map(c => c.id);
+
+      // 1. Explicitly reset all cards belonging to this session back to pristine 'novo' state
+      const updatedCards = resetCardsByIds(cards, sessionCardIds);
+      setCards(updatedCards);
+
+      // 2. Recalculate stats without these cards so Progress dashboard and counters are accurate
+      const updatedStats = recalculateStatsFromCards(updatedCards, stats);
+      setStats(updatedStats);
+
+      // 3. Update badges
+      const updatedBadges = checkBadges(updatedStats, updatedCards, badges);
+      setBadges(updatedBadges);
+      saveBadges(updatedBadges);
+
+      // 4. Clear deck progress for this deck
+      clearDeckProgress(activeSession.sessionKey);
+
+      // 5. Update session state with pristine cards and 0 reviews
+      const pristineCardsForSession = updatedCards.filter(c => sessionCardIds.includes(c.id));
+      const updatedSessionState: ActiveSessionState = {
+        sessionKey: activeSession.sessionKey,
+        title: activeSession.title,
+        macroId: activeSession.macroId,
+        themeId: activeSession.themeId,
+        cardIds: sessionCardIds,
+        currentIndex: 0,
+        sessionReviews: [],
+        initialCardsSnapshot: JSON.parse(JSON.stringify(updatedCards)),
+        initialStatsSnapshot: JSON.parse(JSON.stringify(updatedStats)),
+        initialBadgesSnapshot: JSON.parse(JSON.stringify(updatedBadges)),
+        updatedAt: new Date().toISOString()
+      };
+      saveActiveSession(updatedSessionState);
+      setSavedActiveSession(updatedSessionState);
+      setDeckProgressMap(getDeckProgressMap());
+
+      setActiveSession({
+        ...activeSession,
+        cards: pristineCardsForSession,
+        currentIndex: 0,
+        sessionReviews: [],
+        initialCardsSnapshot: JSON.parse(JSON.stringify(updatedCards)),
+        initialStatsSnapshot: JSON.parse(JSON.stringify(updatedStats)),
+        initialBadgesSnapshot: JSON.parse(JSON.stringify(updatedBadges))
+      });
+    }
+  };
+
+  // Reset all progress across all 160 cards, stats, and badges
+  const handleResetAllProgress = () => {
+    const freshCards = resetAllCards();
+    setCards(freshCards);
+    const freshStats = getInitialUserStats();
+    setStats(freshStats);
+    saveStats(freshStats);
+    const freshBadges = INITIAL_BADGES.map(b => ({ ...b, currentProgress: 0, unlockedAt: undefined }));
+    setBadges(freshBadges);
+    saveBadges(freshBadges);
+    clearActiveSession();
+    setSavedActiveSession(null);
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('transpetro_deck_progress_v2');
+    }
+    setDeckProgressMap({});
+  };
+
+  // Reset progress of a single macro discipline
+  const handleResetMacroCards = (macroId: string) => {
+    const updatedCards = resetMacroCards(cards, macroId);
+    setCards(updatedCards);
+    const updatedStats = recalculateStatsFromCards(updatedCards, stats);
+    setStats(updatedStats);
+    const updatedBadges = checkBadges(updatedStats, updatedCards, badges);
     setBadges(updatedBadges);
     saveBadges(updatedBadges);
 
-    // Save cards
+    clearDeckProgress(macroId);
+    INITIAL_MACRO_DISCIPLINES.find(m => m.id === macroId)?.themes.forEach(t => {
+      clearDeckProgress(t.id);
+    });
+    setDeckProgressMap(getDeckProgressMap());
+
+    if (savedActiveSession && savedActiveSession.macroId === macroId) {
+      clearActiveSession();
+      setSavedActiveSession(null);
+    }
+  };
+
+  // Clean cards from any restarted or incomplete session
+  const handleCleanRestartedSession = () => {
+    let targetCardIds: string[] = [];
+    const stored = getStoredActiveSession();
+    if (stored && (stored.currentIndex === 0 || !stored.sessionReviews || stored.sessionReviews.length === 0)) {
+      targetCardIds.push(...stored.cardIds);
+      clearActiveSession();
+      setSavedActiveSession(null);
+    }
+
+    // Check deck progress map for 0-index decks
+    Object.entries(deckProgressMap).forEach(([key, prog]) => {
+      if ((prog as { currentIndex: number }).currentIndex === 0) {
+        const matching = cards.filter(c => c.themeId === key || c.macroId === key).map(c => c.id);
+        targetCardIds.push(...matching);
+        clearDeckProgress(key);
+      }
+    });
+
+    if (targetCardIds.length > 0) {
+      const updated = resetCardsByIds(cards, targetCardIds);
+      setCards(updated);
+      const newStats = recalculateStatsFromCards(updated, stats);
+      setStats(newStats);
+      const newBadges = checkBadges(newStats, updated, badges);
+      setBadges(newBadges);
+      saveBadges(newBadges);
+      setDeckProgressMap(getDeckProgressMap());
+    } else {
+      // Reconcile stats from cards
+      const newStats = recalculateStatsFromCards(cards, stats);
+      setStats(newStats);
+      const newBadges = checkBadges(newStats, cards, badges);
+      setBadges(newBadges);
+      saveBadges(newBadges);
+    }
+  };
+
+  // Finish study session handler
+  // User completed the full session WITHOUT clicking restart -> commit all cards and session stats!
+  const handleFinishSession = (
+    result: SessionResult,
+    sessionReviews: { cardId: string; rating: Rating }[]
+  ) => {
+    const baseCards = activeSession?.initialCardsSnapshot || cards;
+    const baseStats = activeSession?.initialStatsSnapshot || stats;
+    const baseBadges = activeSession?.initialBadgesSnapshot || badges;
+
+    const { updatedCards, updatedStats, updatedBadges } = consolidateReviews(
+      baseCards,
+      baseStats,
+      baseBadges,
+      sessionReviews,
+      result.accuracy
+    );
+
     setCards(updatedCards);
     saveCards(updatedCards);
+    setStats(updatedStats);
+    saveStats(updatedStats);
+    setBadges(updatedBadges);
+    saveBadges(updatedBadges);
 
-    // Return to home or errors view
+    if (activeSession) {
+      clearActiveSession();
+      clearDeckProgress(activeSession.sessionKey);
+      setSavedActiveSession(null);
+      setDeckProgressMap(getDeckProgressMap());
+    }
+
     setActiveSession(null);
     setCurrentView('home');
   };
@@ -303,11 +782,12 @@ export default function App() {
           <StudySession
             deckTitle={activeSession.title}
             cards={activeSession.cards}
+            initialIndex={activeSession.currentIndex}
+            initialReviews={activeSession.sessionReviews}
+            onCardAnswered={handleCardAnswered}
             onFinishSession={handleFinishSession}
-            onExit={() => {
-              setActiveSession(null);
-              setCurrentView('home');
-            }}
+            onExit={handleExitSession}
+            onRestart={handleRestartSession}
           />
         )}
 
@@ -328,6 +808,13 @@ export default function App() {
             allCards={cards}
             macros={INITIAL_MACRO_DISCIPLINES}
             badges={badges}
+            onResetAllProgress={handleResetAllProgress}
+            onResetMacro={handleResetMacroCards}
+            onCleanRestartedSession={handleCleanRestartedSession}
+            hasRestartedSessionPending={
+              Boolean(savedActiveSession && (savedActiveSession.currentIndex === 0 || !savedActiveSession.sessionReviews || savedActiveSession.sessionReviews.length === 0)) ||
+              Object.values(deckProgressMap).some((p: { currentIndex: number }) => p.currentIndex === 0)
+            }
           />
         )}
 
@@ -335,6 +822,46 @@ export default function App() {
         {currentView === 'home' && (
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-8">
             
+            {/* In-Progress Session Resume Banner */}
+            {savedActiveSession && savedActiveSession.currentIndex > 0 && (
+              <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-amber-500/15 via-emerald-500/10 to-teal-500/15 border border-amber-300 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="flex items-center gap-3.5">
+                  <div className="w-10 h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-xs">
+                    <PlayCircle className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-[10px] font-extrabold uppercase tracking-wider text-amber-900 bg-amber-200/90 px-2 py-0.5 rounded">
+                        Sessão em Andamento
+                      </span>
+                      <span className="text-xs font-bold text-zinc-600 font-mono-numbers">
+                        Você parou no Card {savedActiveSession.currentIndex + 1} de {savedActiveSession.cardIds.length}
+                      </span>
+                    </div>
+                    <h4 className="font-extrabold text-sm sm:text-base text-zinc-900 mt-0.5">
+                      {savedActiveSession.title}
+                    </h4>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2.5 shrink-0">
+                  <button
+                    onClick={handleResumeSavedSession}
+                    className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs sm:text-sm shadow-xs transition flex items-center gap-1.5"
+                  >
+                    <PlayCircle className="w-4 h-4" />
+                    <span>Continuar de Onde Parou</span>
+                  </button>
+                  <button
+                    onClick={handleDiscardSavedSession}
+                    className="px-3 py-2 rounded-xl text-xs font-semibold text-zinc-500 hover:text-zinc-800 hover:bg-zinc-100 transition"
+                  >
+                    Descartar
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Hero & Quick Action Bar */}
             <div className="p-6 sm:p-8 rounded-3xl bg-gradient-to-r from-teal-900 via-emerald-900 to-slate-900 text-white shadow-xl relative overflow-hidden">
               {/* Abstract wave decoration */}
@@ -434,6 +961,7 @@ export default function App() {
                   key={macro.id}
                   macro={macro}
                   allCards={cards}
+                  deckProgressMap={deckProgressMap}
                   onSelectTheme={handleSelectTheme}
                   onStudyMacro={handleStudyMacro}
                 />

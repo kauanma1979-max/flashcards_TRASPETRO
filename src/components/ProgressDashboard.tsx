@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { 
   BarChart3, 
   Trophy, 
@@ -8,7 +9,10 @@ import {
   Target, 
   Layers, 
   Sparkles,
-  Zap
+  Zap,
+  RotateCcw,
+  Trash2,
+  AlertTriangle
 } from 'lucide-react';
 import { UserStats, Flashcard, MacroDiscipline, GamificationBadge } from '../types';
 import { LEVELS, getLevelForXp } from '../utils/spacedRepetition';
@@ -18,14 +22,25 @@ interface ProgressDashboardProps {
   allCards: Flashcard[];
   macros: MacroDiscipline[];
   badges: GamificationBadge[];
+  onResetAllProgress?: () => void;
+  onResetMacro?: (macroId: string) => void;
+  onCleanRestartedSession?: () => void;
+  hasRestartedSessionPending?: boolean;
 }
 
 export function ProgressDashboard({
   stats,
   allCards,
   macros,
-  badges
+  badges,
+  onResetAllProgress,
+  onResetMacro,
+  onCleanRestartedSession,
+  hasRestartedSessionPending = false
 }: ProgressDashboardProps) {
+  const [isResetAllModalOpen, setIsResetAllModalOpen] = useState(false);
+  const [macroToReset, setMacroToReset] = useState<MacroDiscipline | null>(null);
+
   const totalCards = allCards.length;
   const masteredCards = allCards.filter(c => c.status === 'dominado').length;
   const reviewingCards = allCards.filter(c => c.status === 'revisando').length;
@@ -161,6 +176,45 @@ export function ProgressDashboard({
 
       </div>
 
+      {/* Management & Reset Bar */}
+      <div className="p-4 rounded-2xl bg-zinc-50 border border-zinc-200/90 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-lg bg-zinc-200 text-zinc-700 flex items-center justify-center shrink-0">
+            <RotateCcw className="w-4 h-4" />
+          </div>
+          <div>
+            <h4 className="text-xs font-bold text-zinc-800">Controle de Progresso & Estatísticas</h4>
+            <p className="text-[11px] text-zinc-500">
+              Sessões reiniciadas a partir do 1º card não são contabilizadas. Use os controles para alinhar ou zerar dados se necessário.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 shrink-0">
+          {(hasRestartedSessionPending || onCleanRestartedSession) && (
+            <button
+              onClick={onCleanRestartedSession}
+              className="px-3 py-1.5 rounded-lg text-xs font-bold text-amber-800 bg-amber-100 hover:bg-amber-200 border border-amber-300 transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
+              title="Zera os cards de sessões que foram reiniciadas do primeiro card"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Zerar Cards Reiniciados</span>
+            </button>
+          )}
+
+          {onResetAllProgress && (
+            <button
+              onClick={() => setIsResetAllModalOpen(true)}
+              className="px-3 py-1.5 rounded-lg text-xs font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
+              title="Zera todos os 160 cards de volta a 'Novo' e redefine as estatísticas para zero"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Zerar Todo o Progresso</span>
+            </button>
+          )}
+        </div>
+      </div>
+
       {/* Mastery by Macro Discipline (4 Macro Areas Breakdown) */}
       <div className="p-6 sm:p-8 rounded-3xl bg-white border border-zinc-200 shadow-xs">
         <div className="flex items-center justify-between mb-6">
@@ -172,7 +226,7 @@ export function ProgressDashboard({
               Progresso nas 4 Macro Disciplinas
             </h3>
           </div>
-          <span className="text-xs font-bold text-zinc-500">120 Flashcards Totais</span>
+          <span className="text-xs font-bold text-zinc-500">{totalCards} Flashcards Totais</span>
         </div>
 
         <div className="space-y-5">
@@ -182,6 +236,7 @@ export function ProgressDashboard({
             const mMastered = macroCards.filter(c => c.status === 'dominado').length;
             const mErrors = macroCards.filter(c => c.errorCount > 0).length;
             const pct = mTotal > 0 ? Math.round((mMastered / mTotal) * 100) : 0;
+            const hasActivity = mMastered > 0 || mErrors > 0 || pct > 0 || macroCards.some(c => c.status !== 'novo');
 
             return (
               <div key={m.id} className="p-4 rounded-2xl bg-zinc-50/80 border border-zinc-200/60">
@@ -202,6 +257,17 @@ export function ProgressDashboard({
                     <span className="font-mono-numbers font-extrabold text-zinc-800 text-sm">
                       {pct}%
                     </span>
+
+                    {onResetMacro && hasActivity && (
+                      <button
+                        onClick={() => setMacroToReset(m)}
+                        className="px-2 py-0.5 rounded text-[11px] font-bold text-zinc-500 hover:text-rose-700 hover:bg-rose-50 border border-transparent hover:border-rose-200 transition flex items-center gap-1 cursor-pointer"
+                        title={`Zerar o progresso dos cards da matéria ${m.name}`}
+                      >
+                        <RotateCcw className="w-3 h-3" />
+                        <span>Zerar Matéria</span>
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -286,6 +352,77 @@ export function ProgressDashboard({
           })}
         </div>
       </div>
+
+      {/* Modal: Confirm Reset All Progress */}
+      {isResetAllModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl border border-zinc-200 animate-in fade-in zoom-in duration-150">
+            <div className="w-12 h-12 rounded-xl bg-rose-100 text-rose-700 flex items-center justify-center mb-4">
+              <Trash2 className="w-6 h-6" />
+            </div>
+            <h3 className="font-extrabold text-lg text-zinc-900 mb-1.5">
+              Zerar Todo o Progresso?
+            </h3>
+            <p className="text-xs text-zinc-600 leading-relaxed mb-5">
+              Esta ação redefinirá <strong>todos os 160 flashcards</strong> para o status inicial ("Novo"), apagará todo o histórico de repetições, zerará o XP e o contador de revisões.
+              <br /><br />
+              Use esta opção se desejar recomeçar seus estudos 100% do zero.
+            </p>
+            <div className="flex items-center gap-2.5">
+              <button
+                onClick={() => setIsResetAllModalOpen(false)}
+                className="flex-1 py-2.5 rounded-xl border border-zinc-200 text-zinc-700 text-xs font-bold hover:bg-zinc-100 transition cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => {
+                  setIsResetAllModalOpen(false);
+                  onResetAllProgress?.();
+                }}
+                className="flex-1 py-2.5 rounded-xl bg-rose-600 text-white text-xs font-bold hover:bg-rose-700 shadow-sm transition cursor-pointer"
+              >
+                Sim, Zerar Tudo
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Confirm Reset Single Macro */}
+      {macroToReset && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl border border-zinc-200 animate-in fade-in zoom-in duration-150">
+            <div className="w-12 h-12 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center mb-4">
+              <AlertTriangle className="w-6 h-6" />
+            </div>
+            <h3 className="font-extrabold text-lg text-zinc-900 mb-1.5">
+              Zerar Matéria: {macroToReset.name}?
+            </h3>
+            <p className="text-xs text-zinc-600 leading-relaxed mb-5">
+              Todos os <strong>40 flashcards</strong> desta macro área retornarão ao status "Novo" e as revisões associadas serão deduzidas das estatísticas gerais.
+            </p>
+            <div className="flex items-center gap-2.5">
+              <button
+                onClick={() => setMacroToReset(null)}
+                className="flex-1 py-2.5 rounded-xl border border-zinc-200 text-zinc-700 text-xs font-bold hover:bg-zinc-100 transition cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => {
+                  const mId = macroToReset.id;
+                  setMacroToReset(null);
+                  onResetMacro?.(mId);
+                }}
+                className="flex-1 py-2.5 rounded-xl bg-amber-600 text-white text-xs font-bold hover:bg-amber-700 shadow-sm transition cursor-pointer"
+              >
+                Sim, Zerar Matéria
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

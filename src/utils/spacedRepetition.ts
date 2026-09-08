@@ -172,18 +172,18 @@ export const INITIAL_BADGES: GamificationBadge[] = [
     category: 'volume'
   },
   {
-    id: 'cards_120',
-    title: 'Gabaritando o Edital',
-    description: 'Passou por todos os 120 flashcards das 4 macro disciplinas',
+    id: 'cards_160',
+    title: 'Gabaritando o Edital Completo',
+    description: 'Passou por todos os 160 flashcards das 4 macro disciplinas',
     icon: 'Trophy',
-    maxProgress: 120,
+    maxProgress: 160,
     currentProgress: 0,
     category: 'volume'
   },
   {
     id: 'master_nr20',
-    title: 'Guardião de SMS & NR-20',
-    description: 'Dominou 10 ou mais cartões de SMS & Normas',
+    title: 'Guardião de Normas & Legislação',
+    description: 'Dominou 10 ou mais cartões de Normas, Lei 13.303 e SMS',
     icon: 'ShieldCheck',
     maxProgress: 10,
     currentProgress: 0,
@@ -193,40 +193,54 @@ export const INITIAL_BADGES: GamificationBadge[] = [
 
 export function checkBadges(stats: UserStats, allCards: Flashcard[], currentBadges: GamificationBadge[], sessionAccuracy?: number): GamificationBadge[] {
   return currentBadges.map((badge) => {
-    if (badge.unlockedAt) return badge; // already unlocked
+    // Map legacy badge id if present
+    const badgeId = badge.id === 'cards_120' ? 'cards_160' : badge.id;
+    if (badge.unlockedAt) return { ...badge, id: badgeId };
 
     let progress = badge.currentProgress;
     let unlocked = false;
+    let maxProgress = badge.maxProgress;
 
-    if (badge.id === 'first_step') {
+    if (badgeId === 'first_step') {
       progress = Math.min(stats.totalReviews, 1);
       if (progress >= 1) unlocked = true;
-    } else if (badge.id === 'streak_3') {
+    } else if (badgeId === 'streak_3') {
       progress = Math.min(stats.streak, 3);
       if (progress >= 3) unlocked = true;
-    } else if (badge.id === 'streak_7') {
+    } else if (badgeId === 'streak_7') {
       progress = Math.min(stats.streak, 7);
       if (progress >= 7) unlocked = true;
-    } else if (badge.id === 'accuracy_master') {
+    } else if (badgeId === 'accuracy_master') {
       if (sessionAccuracy !== undefined && sessionAccuracy >= 100) {
         progress = 1;
         unlocked = true;
       }
-    } else if (badge.id === 'cards_50') {
+    } else if (badgeId === 'errados_revisados') {
+      const fixedErrors = allCards.filter(c => c.status === 'dominado' && (c.repetitionCount || 0) > 1).length;
+      progress = Math.min(fixedErrors, 15);
+      if (progress >= 15) unlocked = true;
+    } else if (badgeId === 'cards_50') {
       progress = Math.min(stats.totalReviews, 50);
       if (progress >= 50) unlocked = true;
-    } else if (badge.id === 'cards_120') {
-      const reviewedCardsCount = allCards.filter(c => c.repetitionCount > 0).length;
-      progress = Math.min(reviewedCardsCount, 120);
-      if (progress >= 120) unlocked = true;
-    } else if (badge.id === 'master_nr20') {
-      const smsMastered = allCards.filter(c => c.macroId === 'macro_sms_normas' && c.status === 'dominado').length;
+    } else if (badgeId === 'cards_160') {
+      maxProgress = 160;
+      const reviewedCardsCount = allCards.filter(c => (c.repetitionCount || 0) > 0 || c.status !== 'novo').length;
+      progress = Math.min(reviewedCardsCount, 160);
+      if (progress >= 160) unlocked = true;
+    } else if (badgeId === 'master_nr20') {
+      const smsMastered = allCards.filter(c => 
+        (c.tags.some(t => /sms|nr|norma|segurança|ambiental|iso|lei|transporte|licitaç/i.test(t)) || 
+         c.themeId === 'theme_licitacoes_estatais_transporte') && 
+        c.status === 'dominado'
+      ).length;
       progress = Math.min(smsMastered, 10);
       if (progress >= 10) unlocked = true;
     }
 
     return {
       ...badge,
+      id: badgeId,
+      maxProgress,
       currentProgress: progress,
       unlockedAt: unlocked ? new Date().toISOString() : undefined
     };

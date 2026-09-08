@@ -97,3 +97,18 @@ export interface SessionResult {
   accuracy: number;
   mistakeCardIds: string[];
 }
+
+export interface ActiveSessionState {
+  sessionKey: string;
+  title: string;
+  macroId?: string;
+  themeId?: string;
+  cardIds: string[];
+  currentIndex: number;
+  sessionReviews: { cardId: string; rating: Rating }[];
+  updatedAt: string;
+  initialCardsSnapshot?: Flashcard[];
+  initialStatsSnapshot?: UserStats;
+  initialBadgesSnapshot?: GamificationBadge[];
+}
+
