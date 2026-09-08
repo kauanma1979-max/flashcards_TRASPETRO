@@ -1,0 +1,6 @@
+{
+  "name": "Transpetro Flashcards",
+  "description": "App gamificado de flashcards para o concurso Transpetro com 4 macro disciplinas, repetição espaçada, caderno de erros e alarme de estudo.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
