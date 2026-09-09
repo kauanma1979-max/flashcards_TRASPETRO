@@ -64,6 +64,8 @@ import { CadernoDeErros } from './components/CadernoDeErros';
 import { ProgressDashboard } from './components/ProgressDashboard';
 import { StudyAlarmModal } from './components/StudyAlarmModal';
 import { AddCardModal } from './components/AddCardModal';
+import { BackupModal } from './components/BackupModal';
+import { BackupData } from './utils/backup';
 
 interface ActiveSession {
   sessionKey: string;
@@ -95,6 +97,8 @@ export default function App() {
   const [isAddCardOpen, setIsAddCardOpen] = useState(false);
   const [isAlarmModalOpen, setIsAlarmModalOpen] = useState(false);
   const [isAlarmRinging, setIsAlarmRinging] = useState(false);
+  const [isBackupModalOpen, setIsBackupModalOpen] = useState(false);
+  const [backupModalTab, setBackupModalTab] = useState<'export' | 'import'>('export');
 
   // Search & Filtering in Home
   const [homeSearch, setHomeSearch] = useState('');
@@ -665,6 +669,50 @@ export default function App() {
     }
   };
 
+  // Open Backup & Restore modal
+  const handleOpenBackupModal = (tab: 'export' | 'import' = 'export') => {
+    setBackupModalTab(tab);
+    setIsBackupModalOpen(true);
+  };
+
+  // Restore complete backup data from parsed JSON
+  const handleRestoreBackup = (backupData: BackupData) => {
+    // 1. Update cards
+    setCards(backupData.cards);
+    saveCards(backupData.cards);
+
+    // 2. Update stats
+    setStats(backupData.stats);
+    saveStats(backupData.stats);
+
+    // 3. Update badges
+    setBadges(backupData.badges);
+    saveBadges(backupData.badges);
+
+    // 4. Update alarm config if present
+    if (backupData.alarmConfig) {
+      setAlarmConfig(backupData.alarmConfig);
+      saveAlarm(backupData.alarmConfig);
+    }
+
+    // 5. Update deck progress map
+    if (backupData.deckProgressMap) {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('transpetro_deck_progress_v2', JSON.stringify(backupData.deckProgressMap));
+      }
+      setDeckProgressMap(backupData.deckProgressMap);
+    }
+
+    // 6. Update active session
+    if (backupData.activeSession) {
+      saveActiveSession(backupData.activeSession);
+      setSavedActiveSession(backupData.activeSession);
+    } else {
+      clearActiveSession();
+      setSavedActiveSession(null);
+    }
+  };
+
   // Finish study session handler
   // User completed the full session WITHOUT clicking restart -> commit all cards and session stats!
   const handleFinishSession = (
@@ -772,6 +820,7 @@ export default function App() {
         onOpenAlarmModal={() => setIsAlarmModalOpen(true)}
         isAlarmRinging={isAlarmRinging}
         onDismissAlarm={handleDismissAlarm}
+        onOpenBackupModal={() => handleOpenBackupModal('export')}
       />
 
       {/* Main App Body */}
@@ -811,6 +860,7 @@ export default function App() {
             onResetAllProgress={handleResetAllProgress}
             onResetMacro={handleResetMacroCards}
             onCleanRestartedSession={handleCleanRestartedSession}
+            onOpenBackupModal={handleOpenBackupModal}
             hasRestartedSessionPending={
               Boolean(savedActiveSession && (savedActiveSession.currentIndex === 0 || !savedActiveSession.sessionReviews || savedActiveSession.sessionReviews.length === 0)) ||
               Object.values(deckProgressMap).some((p: { currentIndex: number }) => p.currentIndex === 0)
@@ -1026,6 +1076,32 @@ export default function App() {
         onClose={() => setIsAddCardOpen(false)}
         macros={INITIAL_MACRO_DISCIPLINES}
         onAddCard={handleAddCard}
+      />
+
+      {/* Modal: Backup & Restore JSON */}
+      <BackupModal
+        isOpen={isBackupModalOpen}
+        onClose={() => setIsBackupModalOpen(false)}
+        cards={cards}
+        stats={stats}
+        badges={badges}
+        alarmConfig={alarmConfig}
+        deckProgressMap={deckProgressMap}
+        activeSession={activeSession ? {
+          sessionKey: activeSession.sessionKey,
+          title: activeSession.title,
+          macroId: activeSession.macroId,
+          themeId: activeSession.themeId,
+          cardIds: activeSession.cards.map(c => c.id),
+          currentIndex: activeSession.currentIndex,
+          sessionReviews: activeSession.sessionReviews,
+          initialCardsSnapshot: activeSession.initialCardsSnapshot,
+          initialStatsSnapshot: activeSession.initialStatsSnapshot,
+          initialBadgesSnapshot: activeSession.initialBadgesSnapshot,
+          updatedAt: new Date().toISOString()
+        } : savedActiveSession}
+        onRestoreBackup={handleRestoreBackup}
+        initialTab={backupModalTab}
       />
 
     </div>

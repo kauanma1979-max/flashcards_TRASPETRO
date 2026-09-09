@@ -12,7 +12,9 @@ import {
   Zap,
   RotateCcw,
   Trash2,
-  AlertTriangle
+  AlertTriangle,
+  Download,
+  Upload
 } from 'lucide-react';
 import { UserStats, Flashcard, MacroDiscipline, GamificationBadge } from '../types';
 import { LEVELS, getLevelForXp } from '../utils/spacedRepetition';
@@ -26,6 +28,7 @@ interface ProgressDashboardProps {
   onResetMacro?: (macroId: string) => void;
   onCleanRestartedSession?: () => void;
   hasRestartedSessionPending?: boolean;
+  onOpenBackupModal?: (tab: 'export' | 'import') => void;
 }
 
 export function ProgressDashboard({
@@ -36,7 +39,8 @@ export function ProgressDashboard({
   onResetAllProgress,
   onResetMacro,
   onCleanRestartedSession,
-  hasRestartedSessionPending = false
+  hasRestartedSessionPending = false,
+  onOpenBackupModal
 }: ProgressDashboardProps) {
   const [isResetAllModalOpen, setIsResetAllModalOpen] = useState(false);
   const [macroToReset, setMacroToReset] = useState<MacroDiscipline | null>(null);
@@ -190,7 +194,28 @@ export function ProgressDashboard({
           </div>
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
+          {onOpenBackupModal && (
+            <>
+              <button
+                onClick={() => onOpenBackupModal('export')}
+                className="px-3 py-1.5 rounded-lg text-xs font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                title="Fazer backup de todos os flashcards e progresso em formato JSON"
+              >
+                <Download className="w-3.5 h-3.5 text-emerald-700" />
+                <span>Fazer Backup (JSON)</span>
+              </button>
+              <button
+                onClick={() => onOpenBackupModal('import')}
+                className="px-3 py-1.5 rounded-lg text-xs font-bold text-blue-800 bg-blue-50 hover:bg-blue-100 border border-blue-300 transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                title="Restaurar backup de flashcards e progresso a partir de um arquivo JSON"
+              >
+                <Upload className="w-3.5 h-3.5 text-blue-700" />
+                <span>Restaurar Backup (JSON)</span>
+              </button>
+            </>
+          )}
+
           {(hasRestartedSessionPending || onCleanRestartedSession) && (
             <button
               onClick={onCleanRestartedSession}

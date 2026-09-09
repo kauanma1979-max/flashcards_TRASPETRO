@@ -9,7 +9,8 @@ import {
   AlertOctagon, 
   BarChart3, 
   PlusCircle,
-  Timer
+  Timer,
+  HardDrive
 } from 'lucide-react';
 import { UserStats, StudyAlarmConfig } from '../types';
 import { LEVELS, getLevelForXp } from '../utils/spacedRepetition';
@@ -25,6 +26,7 @@ interface NavbarProps {
   onOpenAlarmModal: () => void;
   isAlarmRinging: boolean;
   onDismissAlarm: () => void;
+  onOpenBackupModal?: () => void;
 }
 
 export function Navbar({
@@ -36,7 +38,8 @@ export function Navbar({
   onOpenAddCard,
   onOpenAlarmModal,
   isAlarmRinging,
-  onDismissAlarm
+  onDismissAlarm,
+  onOpenBackupModal
 }: NavbarProps) {
   const [muted, setMuted] = useState(getSoundMuted());
 
@@ -236,6 +239,17 @@ export function Navbar({
             >
               <PlusCircle className="w-4 h-4" />
             </button>
+
+            {/* Backup & Restore JSON */}
+            {onOpenBackupModal && (
+              <button
+                onClick={onOpenBackupModal}
+                title="Backup e Restauração (JSON)"
+                className="p-2 rounded-lg text-zinc-600 hover:text-emerald-700 hover:bg-emerald-50 transition"
+              >
+                <HardDrive className="w-4 h-4" />
+              </button>
+            )}
 
             {/* Sound Toggle */}
             <button
