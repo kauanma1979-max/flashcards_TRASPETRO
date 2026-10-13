@@ -1,3 +1,4 @@
+import { DragEvent } from 'react';
 import { 
   BookOpen, 
   Anchor, 
@@ -10,7 +11,8 @@ import {
   Building2,
   DollarSign,
   Truck,
-  Laptop
+  Laptop,
+  GripVertical
 } from 'lucide-react';
 import { MacroDiscipline, ThemeDeck, Flashcard } from '../types';
 import { isCardDue } from '../utils/spacedRepetition';
@@ -22,6 +24,11 @@ interface MacroDisciplineCardProps {
   deckProgressMap?: Record<string, { currentIndex: number; totalCards: number; updatedAt: string }>;
   onSelectTheme: (theme: ThemeDeck) => void;
   onStudyMacro: (macro: MacroDiscipline) => void;
+  isDragging?: boolean;
+  isDragTarget?: boolean;
+  onDragStart?: (e: DragEvent) => void;
+  onDragOver?: (e: DragEvent) => void;
+  onDrop?: (e: DragEvent) => void;
 }
 
 export function MacroDisciplineCard({
@@ -29,7 +36,12 @@ export function MacroDisciplineCard({
   allCards,
   deckProgressMap = {},
   onSelectTheme,
-  onStudyMacro
+  onStudyMacro,
+  isDragging = false,
+  isDragTarget = false,
+  onDragStart,
+  onDragOver,
+  onDrop
 }: MacroDisciplineCardProps) {
   const macroCards = allCards.filter(c => c.macroId === macro.id);
   const totalCount = macroCards.length;
@@ -55,7 +67,15 @@ export function MacroDisciplineCard({
   };
 
   return (
-    <div className="bg-white rounded-2xl border border-zinc-200/90 shadow-xs hover:shadow-md transition-all overflow-hidden flex flex-col">
+    <div 
+      draggable={Boolean(onDragStart)}
+      onDragStart={onDragStart}
+      onDragOver={onDragOver}
+      onDrop={onDrop}
+      className={`bg-white rounded-2xl border border-zinc-200/90 overflow-hidden flex flex-col card-interactive smooth-transition cursor-grab active:cursor-grabbing ${
+        isDragging ? 'dnd-item-dragging opacity-50 ring-2 ring-emerald-500' : ''
+      } ${isDragTarget ? 'dnd-placeholder ring-2 ring-emerald-400 ring-offset-2' : ''}`}
+    >
       {/* Macro Header Banner */}
       <div className={`p-5 bg-gradient-to-r ${macro.gradient} text-white relative overflow-hidden`}>
         {/* Subtle geometric background watermark */}
@@ -65,6 +85,12 @@ export function MacroDisciplineCard({
 
         <div className="flex items-start justify-between gap-3 relative z-10">
           <div className="flex items-center gap-3">
+            <div 
+              className="p-1 text-white/60 hover:text-white transition cursor-grab active:cursor-grabbing hidden sm:flex items-center" 
+              title="Arraste para reordenar a prioridade deste baralho"
+            >
+              <GripVertical className="w-5 h-5" />
+            </div>
             <div className="p-2.5 rounded-xl bg-white/15 backdrop-blur-xs border border-white/20 shadow-inner">
               {renderMacroIcon()}
             </div>
@@ -134,7 +160,7 @@ export function MacroDisciplineCard({
       <div className="p-4 sm:p-5 flex-1 flex flex-col gap-3 bg-zinc-50/50">
         <div className="flex items-center justify-between">
           <span className="text-xs font-bold uppercase tracking-wider text-zinc-500">
-            Baralhos Temáticos (20 cards cada)
+            {macro.themes.length === 1 ? 'Baralho de Estudo' : 'Baralhos Temáticos'}
           </span>
           <button
             onClick={() => onStudyMacro(macro)}
@@ -144,7 +170,7 @@ export function MacroDisciplineCard({
           </button>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div className={`grid gap-3 ${macro.themes.length === 1 ? 'grid-cols-1' : 'grid-cols-1 md:grid-cols-2'}`}>
           {macro.themes.map((theme) => {
             const themeCards = allCards.filter(c => c.themeId === theme.id);
             const themeTotal = themeCards.length;

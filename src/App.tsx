@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, DragEvent } from 'react';
 import { 
   PlayCircle, 
   Flame, 
@@ -66,6 +66,8 @@ import { StudyAlarmModal } from './components/StudyAlarmModal';
 import { AddCardModal } from './components/AddCardModal';
 import { BackupModal } from './components/BackupModal';
 import { BackupData } from './utils/backup';
+import { ToastContainer, ToastMessage } from './components/Toast';
+import { ConfirmationModal } from './components/ConfirmationModal';
 
 interface ActiveSession {
   sessionKey: string;
@@ -102,6 +104,108 @@ export default function App() {
 
   // Search & Filtering in Home
   const [homeSearch, setHomeSearch] = useState('');
+
+  // Toast / Snackbars State (Guia Seção 3.3)
+  const [toasts, setToasts] = useState<ToastMessage[]>([]);
+
+  const addToast = (type: 'success' | 'error' | 'info', title: string, message?: string) => {
+    const id = `toast_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    setToasts(prev => [...prev, { id, type, title, message }]);
+  };
+
+  const dismissToast = (id: string) => {
+    setToasts(prev => prev.filter(t => t.id !== id));
+  };
+
+  // Confirmation Modal State (Guia Seções 1.1 e 3.1)
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    description: string;
+    confirmLabel?: string;
+    cancelLabel?: string;
+    isDestructive?: boolean;
+    onConfirm: () => void;
+  }>({
+    isOpen: false,
+    title: '',
+    description: '',
+    onConfirm: () => {}
+  });
+
+  const openConfirmation = (config: {
+    title: string;
+    description: string;
+    confirmLabel?: string;
+    cancelLabel?: string;
+    isDestructive?: boolean;
+    onConfirm: () => void;
+  }) => {
+    setConfirmModal({
+      isOpen: true,
+      ...config
+    });
+  };
+
+  const closeConfirmation = () => {
+    setConfirmModal(prev => ({ ...prev, isOpen: false }));
+  };
+
+  // Drag and Drop Macro Disciplines State (Guia Seção 4)
+  const [macroOrder, setMacroOrder] = useState<MacroDiscipline[]>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('transpetro_macro_order_v1');
+      if (saved) {
+        try {
+          const ids: string[] = JSON.parse(saved);
+          const map = new Map(INITIAL_MACRO_DISCIPLINES.map(m => [m.id, m]));
+          const reordered = ids.map(id => map.get(id)).filter(Boolean) as MacroDiscipline[];
+          INITIAL_MACRO_DISCIPLINES.forEach(m => {
+            if (!reordered.some(r => r.id === m.id)) reordered.push(m);
+          });
+          return reordered;
+        } catch {
+          // fallback
+        }
+      }
+    }
+    return INITIAL_MACRO_DISCIPLINES;
+  });
+
+  const [draggedMacroIndex, setDraggedMacroIndex] = useState<number | null>(null);
+  const [dragOverMacroIndex, setDragOverMacroIndex] = useState<number | null>(null);
+
+  const handleMacroDragStart = (index: number) => {
+    setDraggedMacroIndex(index);
+  };
+
+  const handleMacroDragOver = (e: DragEvent, index: number) => {
+    e.preventDefault();
+    if (draggedMacroIndex === null || draggedMacroIndex === index) return;
+    setDragOverMacroIndex(index);
+  };
+
+  const handleMacroDrop = (e: DragEvent, targetIndex: number) => {
+    e.preventDefault();
+    if (draggedMacroIndex === null || draggedMacroIndex === targetIndex) {
+      setDraggedMacroIndex(null);
+      setDragOverMacroIndex(null);
+      return;
+    }
+
+    const nextList = [...macroOrder];
+    const [moved] = nextList.splice(draggedMacroIndex, 1);
+    nextList.splice(targetIndex, 0, moved);
+
+    setMacroOrder(nextList);
+    setDraggedMacroIndex(null);
+    setDragOverMacroIndex(null);
+
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('transpetro_macro_order_v1', JSON.stringify(nextList.map(m => m.id)));
+    }
+    addToast('info', 'Ordem de Estudo Atualizada', 'A prioridade das disciplinas foi salva.');
+  };
 
   // Ref to avoid duplicate alarms in the same minute
   const lastAlarmTriggerRef = useRef<string>('');
@@ -144,7 +248,12 @@ export default function App() {
     setBadges(currentBadges);
     setDeckProgressMap(getDeckProgressMap());
     if (saved && saved.currentIndex > 0) {
-      setSavedActiveSession(saved);
+      const allCardsExist = saved.cardIds.every(id => reconciledCards.some(c => c.id === id));
+      if (allCardsExist) {
+        setSavedActiveSession(saved);
+      } else {
+        clearActiveSession();
+      }
     }
   }, []);
 
@@ -285,24 +394,35 @@ export default function App() {
 
   // Discard saved in-progress study session
   const handleDiscardSavedSession = () => {
-    if (savedActiveSession) {
-      if (savedActiveSession.initialCardsSnapshot) {
-        setCards(savedActiveSession.initialCardsSnapshot);
-        saveCards(savedActiveSession.initialCardsSnapshot);
+    openConfirmation({
+      title: 'Descartar Sessão em Andamento?',
+      description: 'Você perderá o progresso desta sessão não finalizada. O histórico anterior e estatísticas acumuladas serão preservados.',
+      confirmLabel: 'Confirmar Descarte',
+      cancelLabel: 'Cancelar',
+      isDestructive: true,
+      onConfirm: () => {
+        closeConfirmation();
+        if (savedActiveSession) {
+          if (savedActiveSession.initialCardsSnapshot) {
+            setCards(savedActiveSession.initialCardsSnapshot);
+            saveCards(savedActiveSession.initialCardsSnapshot);
+          }
+          if (savedActiveSession.initialStatsSnapshot) {
+            setStats(savedActiveSession.initialStatsSnapshot);
+            saveStats(savedActiveSession.initialStatsSnapshot);
+          }
+          if (savedActiveSession.initialBadgesSnapshot) {
+            setBadges(savedActiveSession.initialBadgesSnapshot);
+            saveBadges(savedActiveSession.initialBadgesSnapshot);
+          }
+          clearDeckProgress(savedActiveSession.sessionKey);
+        }
+        clearActiveSession();
+        setSavedActiveSession(null);
+        setDeckProgressMap(getDeckProgressMap());
+        addToast('info', 'Sessão Descartada', 'O progresso parcial foi descartado.');
       }
-      if (savedActiveSession.initialStatsSnapshot) {
-        setStats(savedActiveSession.initialStatsSnapshot);
-        saveStats(savedActiveSession.initialStatsSnapshot);
-      }
-      if (savedActiveSession.initialBadgesSnapshot) {
-        setBadges(savedActiveSession.initialBadgesSnapshot);
-        saveBadges(savedActiveSession.initialBadgesSnapshot);
-      }
-      clearDeckProgress(savedActiveSession.sessionKey);
-    }
-    clearActiveSession();
-    setSavedActiveSession(null);
-    setDeckProgressMap(getDeckProgressMap());
+    });
   };
 
   // Start study session for a specific sub-theme
@@ -591,44 +711,67 @@ export default function App() {
     }
   };
 
-  // Reset all progress across all 160 cards, stats, and badges
+  // Reset all progress across all cards, stats, and badges
   const handleResetAllProgress = () => {
-    const freshCards = resetAllCards();
-    setCards(freshCards);
-    const freshStats = getInitialUserStats();
-    setStats(freshStats);
-    saveStats(freshStats);
-    const freshBadges = INITIAL_BADGES.map(b => ({ ...b, currentProgress: 0, unlockedAt: undefined }));
-    setBadges(freshBadges);
-    saveBadges(freshBadges);
-    clearActiveSession();
-    setSavedActiveSession(null);
-    if (typeof window !== 'undefined') {
-      localStorage.removeItem('transpetro_deck_progress_v2');
-    }
-    setDeckProgressMap({});
+    openConfirmation({
+      title: 'Limpar Todos os Resultados?',
+      description: 'Esta é uma ação destrutiva. Todos os seus cards voltarão ao status "Novo", suas sequências e XP serão zerados para recomeçar o preparatório.',
+      confirmLabel: 'Confirmar Limpeza Total',
+      cancelLabel: 'Cancelar',
+      isDestructive: true,
+      onConfirm: () => {
+        closeConfirmation();
+        const freshCards = resetAllCards();
+        setCards(freshCards);
+        const freshStats = getInitialUserStats();
+        setStats(freshStats);
+        saveStats(freshStats);
+        const freshBadges = INITIAL_BADGES.map(b => ({ ...b, currentProgress: 0, unlockedAt: undefined }));
+        setBadges(freshBadges);
+        saveBadges(freshBadges);
+        clearActiveSession();
+        setSavedActiveSession(null);
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem('transpetro_deck_progress_v2');
+        }
+        setDeckProgressMap({});
+        addToast('success', 'Limpeza Concluída', 'Todos os dados e estatísticas foram redefinidos com sucesso.');
+      }
+    });
   };
 
   // Reset progress of a single macro discipline
   const handleResetMacroCards = (macroId: string) => {
-    const updatedCards = resetMacroCards(cards, macroId);
-    setCards(updatedCards);
-    const updatedStats = recalculateStatsFromCards(updatedCards, stats);
-    setStats(updatedStats);
-    const updatedBadges = checkBadges(updatedStats, updatedCards, badges);
-    setBadges(updatedBadges);
-    saveBadges(updatedBadges);
+    const macroObj = INITIAL_MACRO_DISCIPLINES.find(m => m.id === macroId);
+    openConfirmation({
+      title: `Zerar Progresso de ${macroObj?.shortName || 'Disciplina'}?`,
+      description: 'Todos os cards desta disciplina voltarão ao status "Novo" e seus intervalos de repetição serão reiniciados.',
+      confirmLabel: 'Confirmar Limpeza',
+      cancelLabel: 'Cancelar',
+      isDestructive: true,
+      onConfirm: () => {
+        closeConfirmation();
+        const updatedCards = resetMacroCards(cards, macroId);
+        setCards(updatedCards);
+        const updatedStats = recalculateStatsFromCards(updatedCards, stats);
+        setStats(updatedStats);
+        const updatedBadges = checkBadges(updatedStats, updatedCards, badges);
+        setBadges(updatedBadges);
+        saveBadges(updatedBadges);
 
-    clearDeckProgress(macroId);
-    INITIAL_MACRO_DISCIPLINES.find(m => m.id === macroId)?.themes.forEach(t => {
-      clearDeckProgress(t.id);
+        clearDeckProgress(macroId);
+        INITIAL_MACRO_DISCIPLINES.find(m => m.id === macroId)?.themes.forEach(t => {
+          clearDeckProgress(t.id);
+        });
+        setDeckProgressMap(getDeckProgressMap());
+
+        if (savedActiveSession && savedActiveSession.macroId === macroId) {
+          clearActiveSession();
+          setSavedActiveSession(null);
+        }
+        addToast('success', 'Disciplina Reiniciada', `Cards de ${macroObj?.shortName} estão prontos para novo estudo.`);
+      }
     });
-    setDeckProgressMap(getDeckProgressMap());
-
-    if (savedActiveSession && savedActiveSession.macroId === macroId) {
-      clearActiveSession();
-      setSavedActiveSession(null);
-    }
   };
 
   // Clean cards from any restarted or incomplete session
@@ -711,6 +854,7 @@ export default function App() {
       clearActiveSession();
       setSavedActiveSession(null);
     }
+    addToast('success', 'Backup Restaurado', 'Seus cartões e estatísticas foram recuperados com sucesso.');
   };
 
   // Finish study session handler
@@ -747,6 +891,7 @@ export default function App() {
 
     setActiveSession(null);
     setCurrentView('home');
+    addToast('success', 'Sessão Concluída!', `Você finalizou com ${result.accuracy}% de precisão (+${result.xpEarned} XP).`);
   };
 
   // Reset an error card directly from Caderno de Erros
@@ -764,6 +909,7 @@ export default function App() {
     });
     setCards(updatedCards);
     saveCards(updatedCards);
+    addToast('info', 'Erro Removido', 'Card marcado como revisado no Caderno de Erros.');
   };
 
   // Add custom card
@@ -771,6 +917,7 @@ export default function App() {
     const updated = [newCard, ...cards];
     setCards(updated);
     saveCards(updated);
+    addToast('success', 'Card Adicionado', 'Seu flashcard personalizado foi salvo com sucesso.');
   };
 
   // Dismiss ringing alarm
@@ -1004,9 +1151,9 @@ export default function App() {
               </div>
             </div>
 
-            {/* Grid of the 4 Macro Disciplines */}
+            {/* Grid of the 4 Macro Disciplines com Drag and Drop Reordering */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {INITIAL_MACRO_DISCIPLINES.map((macro) => (
+              {macroOrder.map((macro, index) => (
                 <MacroDisciplineCard
                   key={macro.id}
                   macro={macro}
@@ -1014,6 +1161,11 @@ export default function App() {
                   deckProgressMap={deckProgressMap}
                   onSelectTheme={handleSelectTheme}
                   onStudyMacro={handleStudyMacro}
+                  isDragging={draggedMacroIndex === index}
+                  isDragTarget={dragOverMacroIndex === index}
+                  onDragStart={() => handleMacroDragStart(index)}
+                  onDragOver={(e) => handleMacroDragOver(e, index)}
+                  onDrop={(e) => handleMacroDrop(e, index)}
                 />
               ))}
             </div>
@@ -1103,6 +1255,21 @@ export default function App() {
         onRestoreBackup={handleRestoreBackup}
         initialTab={backupModalTab}
       />
+
+      {/* Confirmation Modal para Ações Importantes (Guia Seção 3.1) */}
+      <ConfirmationModal
+        isOpen={confirmModal.isOpen}
+        title={confirmModal.title}
+        description={confirmModal.description}
+        confirmLabel={confirmModal.confirmLabel}
+        cancelLabel={confirmModal.cancelLabel}
+        isDestructive={confirmModal.isDestructive}
+        onConfirm={confirmModal.onConfirm}
+        onCancel={closeConfirmation}
+      />
+
+      {/* Toasts / Snackbars (Guia Seção 3.3) */}
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
 
     </div>
   );

@@ -136,10 +136,11 @@ export function BackupModal({
   const unlockedBadgesCount = badges.filter(b => b.unlockedAt).length;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 modal-overlay animate-in fade-in duration-200">
       <div 
-        className="bg-white rounded-3xl max-w-xl w-full p-6 sm:p-7 shadow-2xl border border-zinc-200 relative overflow-hidden flex flex-col max-h-[90vh]"
+        className="bg-white rounded-2xl max-w-xl w-full p-6 sm:p-7 shadow-2xl border border-zinc-200 relative overflow-hidden flex flex-col max-h-[90vh] modal-content"
         onClick={(e) => e.stopPropagation()}
+        style={{ borderRadius: '16px' }}
       >
         {/* Header */}
         <div className="flex items-center justify-between pb-4 border-b border-zinc-100">

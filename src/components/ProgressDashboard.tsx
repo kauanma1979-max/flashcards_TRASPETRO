@@ -231,7 +231,7 @@ export function ProgressDashboard({
             <button
               onClick={() => setIsResetAllModalOpen(true)}
               className="px-3 py-1.5 rounded-lg text-xs font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
-              title="Zera todos os 160 cards de volta a 'Novo' e redefine as estatísticas para zero"
+              title={`Zera todos os ${totalCards} cards de volta a 'Novo' e redefine as estatísticas para zero`}
             >
               <Trash2 className="w-3.5 h-3.5" />
               <span>Zerar Todo o Progresso</span>
@@ -240,7 +240,7 @@ export function ProgressDashboard({
         </div>
       </div>
 
-      {/* Mastery by Macro Discipline (4 Macro Areas Breakdown) */}
+      {/* Mastery by Macro Discipline */}
       <div className="p-6 sm:p-8 rounded-3xl bg-white border border-zinc-200 shadow-xs">
         <div className="flex items-center justify-between mb-6">
           <div>
@@ -248,7 +248,7 @@ export function ProgressDashboard({
               Desempenho por Matéria
             </span>
             <h3 className="text-lg sm:text-xl font-extrabold text-zinc-900">
-              Progresso nas 4 Macro Disciplinas
+              {macros.length > 1 ? `Progresso nas ${macros.length} Disciplinas` : `Progresso da Disciplina`}
             </h3>
           </div>
           <span className="text-xs font-bold text-zinc-500">{totalCards} Flashcards Totais</span>
@@ -389,7 +389,7 @@ export function ProgressDashboard({
               Zerar Todo o Progresso?
             </h3>
             <p className="text-xs text-zinc-600 leading-relaxed mb-5">
-              Esta ação redefinirá <strong>todos os 160 flashcards</strong> para o status inicial ("Novo"), apagará todo o histórico de repetições, zerará o XP e o contador de revisões.
+              Esta ação redefinirá <strong>todos os {totalCards} flashcards</strong> para o status inicial ("Novo"), apagará todo o histórico de repetições, zerará o XP e o contador de revisões.
               <br /><br />
               Use esta opção se desejar recomeçar seus estudos 100% do zero.
             </p>

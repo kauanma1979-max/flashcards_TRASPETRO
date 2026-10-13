@@ -84,10 +84,11 @@ export function StudyAlarmModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 modal-overlay animate-in fade-in duration-200">
       <div 
-        className="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-8 shadow-2xl border border-zinc-200 relative overflow-hidden"
+        className="bg-white rounded-2xl max-w-lg w-full p-6 sm:p-8 shadow-2xl border border-zinc-200 relative overflow-hidden modal-content"
         onClick={(e) => e.stopPropagation()}
+        style={{ borderRadius: '16px' }}
       >
         {/* Header */}
         <div className="flex items-center justify-between pb-4 border-b border-zinc-100">

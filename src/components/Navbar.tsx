@@ -63,6 +63,9 @@ export function Navbar({
 
   return (
     <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-zinc-200/80 shadow-xs">
+      {/* 1.3 Cabeçalho Animado com Gradiente Contínuo */}
+      <div className="h-1 w-full header-animated" />
+
       {/* Alarm Alert Bar if actively ringing */}
       {isAlarmRinging && (
         <div className="bg-rose-600 text-white px-4 py-2.5 flex items-center justify-between animate-pulse">

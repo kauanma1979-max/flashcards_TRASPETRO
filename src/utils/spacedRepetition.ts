@@ -174,9 +174,9 @@ export const INITIAL_BADGES: GamificationBadge[] = [
   {
     id: 'cards_160',
     title: 'Gabaritando o Edital Completo',
-    description: 'Passou por todos os 160 flashcards das 4 macro disciplinas',
+    description: 'Passou por todos os 50 flashcards oficiais de Processos Administrativos e Legislação',
     icon: 'Trophy',
-    maxProgress: 160,
+    maxProgress: 50,
     currentProgress: 0,
     category: 'volume'
   },
@@ -223,10 +223,10 @@ export function checkBadges(stats: UserStats, allCards: Flashcard[], currentBadg
       progress = Math.min(stats.totalReviews, 50);
       if (progress >= 50) unlocked = true;
     } else if (badgeId === 'cards_160') {
-      maxProgress = 160;
+      maxProgress = allCards.length;
       const reviewedCardsCount = allCards.filter(c => (c.repetitionCount || 0) > 0 || c.status !== 'novo').length;
-      progress = Math.min(reviewedCardsCount, 160);
-      if (progress >= 160) unlocked = true;
+      progress = Math.min(reviewedCardsCount, maxProgress);
+      if (progress >= maxProgress && maxProgress > 0) unlocked = true;
     } else if (badgeId === 'master_nr20') {
       const smsMastered = allCards.filter(c => 
         (c.tags.some(t => /sms|nr|norma|segurança|ambiental|iso|lei|transporte|licitaç/i.test(t)) || 
