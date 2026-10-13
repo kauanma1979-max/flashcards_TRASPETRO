@@ -3,7 +3,7 @@ import { ALL_INITIAL_FLASHCARDS } from '../data/transpetroCards';
 import { INITIAL_BADGES, getLevelForXp } from './spacedRepetition';
 
 const STORAGE_KEYS = {
-  CARDS: 'transpetro_cards_v4_50cards',
+  CARDS: 'transpetro_cards_v5_all_215cards',
   STATS: 'transpetro_stats_v2',
   BADGES: 'transpetro_badges_v2',
   ALARM: 'transpetro_alarm_v2',
@@ -15,7 +15,10 @@ export function getStoredCards(): Flashcard[] {
   if (typeof window === 'undefined') return ALL_INITIAL_FLASHCARDS;
   let saved = localStorage.getItem(STORAGE_KEYS.CARDS);
   if (!saved) {
-    saved = localStorage.getItem('transpetro_cards_v3_adm') || localStorage.getItem('transpetro_cards_v2_adm') || localStorage.getItem('transpetro_cards_v1');
+    saved = localStorage.getItem('transpetro_cards_v4_50cards') || 
+            localStorage.getItem('transpetro_cards_v3_adm') || 
+            localStorage.getItem('transpetro_cards_v2_adm') || 
+            localStorage.getItem('transpetro_cards_v1');
   }
   if (!saved) {
     saveCards(ALL_INITIAL_FLASHCARDS);

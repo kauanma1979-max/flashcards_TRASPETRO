@@ -12,7 +12,10 @@ import {
   DollarSign,
   Truck,
   Laptop,
-  GripVertical
+  GripVertical,
+  Calculator,
+  Flame,
+  Star
 } from 'lucide-react';
 import { MacroDiscipline, ThemeDeck, Flashcard } from '../types';
 import { isCardDue } from '../utils/spacedRepetition';
@@ -51,11 +54,15 @@ export function MacroDisciplineCard({
   const masteryPercentage = totalCount > 0 ? Math.round((masteredCount / totalCount) * 100) : 0;
   const macroProgress = deckProgressMap[macro.id];
 
+  const highPriorityCount = macroCards.filter(c => c.tags.some(t => t.toLowerCase().includes('alta prioridade'))).length;
+  const mediumPriorityCount = macroCards.filter(c => c.tags.some(t => t.toLowerCase().includes('média prioridade') || t.toLowerCase().includes('media prioridade'))).length;
+
   // Icon mapping
   const renderMacroIcon = () => {
     switch (macro.iconName) {
       case 'Building2': return <Building2 className="w-6 h-6 text-white" />;
       case 'DollarSign': return <DollarSign className="w-6 h-6 text-white" />;
+      case 'Calculator': return <Calculator className="w-6 h-6 text-white" />;
       case 'Truck': return <Truck className="w-6 h-6 text-white" />;
       case 'Laptop': return <Laptop className="w-6 h-6 text-white" />;
       case 'BookOpen': return <BookOpen className="w-6 h-6 text-white" />;

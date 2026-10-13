@@ -11,7 +11,8 @@ import {
   Filter,
   Plus,
   RefreshCw,
-  Search
+  Search,
+  X
 } from 'lucide-react';
 import { 
   Flashcard, 
@@ -154,7 +155,7 @@ export default function App() {
   // Drag and Drop Macro Disciplines State (Guia Seção 4)
   const [macroOrder, setMacroOrder] = useState<MacroDiscipline[]>(() => {
     if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('transpetro_macro_order_v1');
+      const saved = localStorage.getItem('transpetro_macro_order_v2') || localStorage.getItem('transpetro_macro_order_v1');
       if (saved) {
         try {
           const ids: string[] = JSON.parse(saved);
@@ -163,7 +164,9 @@ export default function App() {
           INITIAL_MACRO_DISCIPLINES.forEach(m => {
             if (!reordered.some(r => r.id === m.id)) reordered.push(m);
           });
-          return reordered;
+          if (reordered.length === INITIAL_MACRO_DISCIPLINES.length) {
+            return reordered;
+          }
         } catch {
           // fallback
         }
@@ -171,6 +174,21 @@ export default function App() {
     }
     return INITIAL_MACRO_DISCIPLINES;
   });
+
+  const [selectedMacroFilter, setSelectedMacroFilter] = useState<string>('all');
+
+  // Sincroniza macroOrder com INITIAL_MACRO_DISCIPLINES caso haja matérias novas ou pendentes
+  useEffect(() => {
+    setMacroOrder(prev => {
+      const currentIds = new Set(prev.map(m => m.id));
+      const missing = INITIAL_MACRO_DISCIPLINES.filter(m => !currentIds.has(m.id));
+      if (missing.length > 0 || prev.length !== INITIAL_MACRO_DISCIPLINES.length) {
+        const full = [...prev.filter(m => INITIAL_MACRO_DISCIPLINES.some(im => im.id === m.id)), ...missing];
+        return full;
+      }
+      return prev;
+    });
+  }, []);
 
   const [draggedMacroIndex, setDraggedMacroIndex] = useState<number | null>(null);
   const [dragOverMacroIndex, setDragOverMacroIndex] = useState<number | null>(null);
@@ -569,6 +587,27 @@ export default function App() {
       sessionKey: 'caderno_erros_intensivo',
       title: 'Revisão Intensiva: Caderno de Erros',
       cards: cardsToReview,
+      currentIndex: 0,
+      sessionReviews: [],
+      initialCardsSnapshot: initialCardsSnap,
+      initialStatsSnapshot: initialStatsSnap,
+      initialBadgesSnapshot: initialBadgesSnap
+    };
+    setActiveSession(session);
+    setCurrentView('deck');
+  };
+
+  // Start study session for search-matched cards
+  const handleStudySearchCards = (searchCards: Flashcard[], query: string) => {
+    if (searchCards.length === 0) return;
+    const initialCardsSnap = JSON.parse(JSON.stringify(cards));
+    const initialStatsSnap = JSON.parse(JSON.stringify(stats));
+    const initialBadgesSnap = JSON.parse(JSON.stringify(badges));
+
+    const session: ActiveSession = {
+      sessionKey: `busca_${Date.now()}`,
+      title: `Busca: "${query}" (${searchCards.length} cards)`,
+      cards: searchCards,
       currentIndex: 0,
       sessionReviews: [],
       initialCardsSnapshot: initialCardsSnap,
@@ -1060,29 +1099,53 @@ export default function App() {
             )}
 
             {/* Hero & Quick Action Bar */}
-            <div className="p-6 sm:p-8 rounded-3xl bg-gradient-to-r from-teal-900 via-emerald-900 to-slate-900 text-white shadow-xl relative overflow-hidden">
+            <div className="p-6 sm:p-8 rounded-3xl bg-gradient-to-r from-teal-950 via-emerald-950 to-slate-950 text-white shadow-xl relative overflow-hidden border border-emerald-900/50">
               {/* Abstract wave decoration */}
               <div className="absolute right-0 bottom-0 opacity-10 pointer-events-none translate-y-8 translate-x-8">
                 <div className="w-96 h-96 rounded-full border-[18px] border-white" />
               </div>
 
               <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
-                <div className="max-w-2xl">
-                  <div className="flex items-center gap-2 flex-wrap mb-2">
+                <div className="max-w-3xl">
+                  <div className="flex items-center gap-2 flex-wrap mb-2.5">
                     <span className="px-2.5 py-0.5 rounded-md text-[11px] font-bold uppercase tracking-wider bg-emerald-400/20 text-emerald-300 border border-emerald-400/30">
-                      Edital Transpetro 2024 / 2025
+                      Edital Transpetro 2024 / 2025 • Cesgranrio
+                    </span>
+                    <span className="px-2.5 py-0.5 rounded-md text-[11px] font-bold uppercase tracking-wider bg-teal-400/20 text-teal-300 border border-teal-400/30">
+                      4 Macro Áreas Oficiais • 215 Flashcards
                     </span>
                     <span className="px-2.5 py-0.5 rounded-md text-[11px] font-bold uppercase tracking-wider bg-amber-400/20 text-amber-300 border border-amber-400/30">
-                      20 Cards por Tema (160 no total)
+                      Nível Médio Júnior • Administração e Controle
                     </span>
                   </div>
+
                   <h1 className="text-2xl sm:text-4xl font-extrabold tracking-tight leading-tight text-white">
                     Preparatório Gamificado Transpetro
                   </h1>
                   <p className="text-sm text-emerald-100/90 mt-2 leading-relaxed">
-                    Memorização ativa com repetição espaçada dividida nas 4 macro áreas do concurso.
-                    Pratique, zere seus erros e acompanhe sua evolução para conquistar sua vaga na frota e nos terminais.
+                    Memorização ativa com repetição espaçada (SM-2) com todos os 215 cards oficiais das 4 macro áreas do concurso.
+                    Pratique por matéria, zere seus erros no Caderno de Erros e acompanhe seu rendimento até a aprovação.
                   </p>
+
+                  {/* Badges das 4 Macro Áreas com contagem exata */}
+                  <div className="mt-4 flex flex-wrap items-center gap-2 pt-3 border-t border-white/10 text-xs">
+                    <span className="px-2.5 py-1 rounded-lg bg-purple-500/25 border border-purple-400/30 text-purple-200 font-semibold flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-purple-400" />
+                      Processos Adm. (50 cards)
+                    </span>
+                    <span className="px-2.5 py-1 rounded-lg bg-emerald-500/25 border border-emerald-400/30 text-emerald-200 font-semibold flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                      Finanças & Contab. (50 cards)
+                    </span>
+                    <span className="px-2.5 py-1 rounded-lg bg-blue-500/25 border border-blue-400/30 text-blue-200 font-semibold flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-blue-400" />
+                      Logística & Suprimentos (65 cards)
+                    </span>
+                    <span className="px-2.5 py-1 rounded-lg bg-amber-500/25 border border-amber-400/30 text-amber-200 font-semibold flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-amber-400" />
+                      Noções de Informática (50 cards)
+                    </span>
+                  </div>
                 </div>
 
                 {/* Primary Quick Start CTAs */}
@@ -1090,7 +1153,7 @@ export default function App() {
                   {dueCards.length > 0 ? (
                     <button
                       onClick={handleStudyAllDue}
-                      className="px-6 py-3.5 rounded-2xl bg-emerald-400 hover:bg-emerald-300 text-emerald-950 font-extrabold text-sm shadow-lg shadow-emerald-950/40 transition flex items-center justify-center gap-2 transform active:scale-95"
+                      className="px-6 py-3.5 rounded-2xl bg-emerald-400 hover:bg-emerald-300 text-emerald-950 font-extrabold text-sm shadow-lg shadow-emerald-950/40 transition flex items-center justify-center gap-2 transform active:scale-95 cursor-pointer"
                     >
                       <PlayCircle className="w-5 h-5 text-emerald-950" />
                       <span>Revisar Pendentes ({dueCards.length} hoje)</span>
@@ -1105,7 +1168,7 @@ export default function App() {
                   {mistakeCards.length > 0 && (
                     <button
                       onClick={() => setCurrentView('erros')}
-                      className="px-5 py-3 rounded-2xl bg-rose-500/25 hover:bg-rose-500/40 border border-rose-400/40 text-rose-100 font-bold text-xs transition flex items-center justify-center gap-2"
+                      className="px-5 py-3 rounded-2xl bg-rose-500/25 hover:bg-rose-500/40 border border-rose-400/40 text-rose-100 font-bold text-xs transition flex items-center justify-center gap-2 cursor-pointer"
                     >
                       <AlertOctagon className="w-4 h-4 text-rose-300" />
                       <span>Caderno de Erros ({mistakeCards.length} pendentes)</span>
@@ -1133,42 +1196,160 @@ export default function App() {
               )}
             </div>
 
-            {/* Quick Macro Discipline Overview Header */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div>
-                <span className="text-xs font-bold uppercase tracking-widest text-emerald-800">
-                  Estrutura Curricular
-                </span>
-                <h2 className="text-xl sm:text-2xl font-extrabold text-zinc-900 tracking-tight">
-                  As 4 Macro Disciplinas do Concurso
-                </h2>
+            {/* Layout Controls: Search Bar and Category Tabs */}
+            <div className="space-y-4">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                  <span className="text-xs font-bold uppercase tracking-widest text-emerald-800">
+                    Estrutura Curricular
+                  </span>
+                  <h2 className="text-xl sm:text-2xl font-extrabold text-zinc-900 tracking-tight">
+                    As 4 Macro Disciplinas do Concurso
+                  </h2>
+                </div>
+
+                {/* Live Search Input */}
+                <div className="relative w-full md:w-80">
+                  <Search className="w-4 h-4 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={homeSearch}
+                    onChange={(e) => setHomeSearch(e.target.value)}
+                    placeholder="Buscar card por palavra-chave..."
+                    className="w-full pl-9 pr-9 py-2 text-xs sm:text-sm bg-white border border-zinc-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-2xs"
+                  />
+                  {homeSearch && (
+                    <button
+                      onClick={() => setHomeSearch('')}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 cursor-pointer"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
               </div>
 
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-bold text-zinc-500">
-                  Total: {cards.length} flashcards carregados
-                </span>
+              {/* Macro Filter Tabs */}
+              <div className="flex items-center gap-2 overflow-x-auto pb-1 text-xs">
+                <button
+                  onClick={() => setSelectedMacroFilter('all')}
+                  className={`px-3 py-1.5 rounded-xl font-bold transition shrink-0 cursor-pointer ${
+                    selectedMacroFilter === 'all'
+                      ? 'bg-zinc-900 text-white shadow-xs'
+                      : 'bg-white text-zinc-600 hover:bg-zinc-100 border border-zinc-200'
+                  }`}
+                >
+                  Todas as 4 Áreas ({cards.length})
+                </button>
+                {INITIAL_MACRO_DISCIPLINES.map(m => {
+                  const count = cards.filter(c => c.macroId === m.id).length;
+                  const isSelected = selectedMacroFilter === m.id;
+                  return (
+                    <button
+                      key={m.id}
+                      onClick={() => setSelectedMacroFilter(m.id)}
+                      className={`px-3 py-1.5 rounded-xl font-bold transition shrink-0 cursor-pointer ${
+                        isSelected
+                          ? 'bg-emerald-700 text-white shadow-xs'
+                          : 'bg-white text-zinc-600 hover:bg-zinc-100 border border-zinc-200'
+                      }`}
+                    >
+                      {m.shortName} ({count})
+                    </button>
+                  );
+                })}
               </div>
+
+              {/* Search Active Notification & Quick Study Button */}
+              {homeSearch.trim() && (
+                (() => {
+                  const q = homeSearch.toLowerCase().trim();
+                  const matches = cards.filter(c =>
+                    c.question.toLowerCase().includes(q) ||
+                    c.answer.toLowerCase().includes(q) ||
+                    c.tags.some(t => t.toLowerCase().includes(q)) ||
+                    (c.tip && c.tip.toLowerCase().includes(q))
+                  );
+                  return (
+                    <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-emerald-900">
+                      <div>
+                        <span className="font-bold">Resultado da busca:</span> Encontrado(s){' '}
+                        <span className="font-mono-numbers font-extrabold">{matches.length}</span> flashcard(s) contendo "{homeSearch}".
+                      </div>
+                      {matches.length > 0 && (
+                        <button
+                          onClick={() => handleStudySearchCards(matches, homeSearch)}
+                          className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold transition flex items-center gap-1.5 self-start sm:self-auto cursor-pointer shadow-2xs"
+                        >
+                          <PlayCircle className="w-4 h-4" />
+                          <span>Estudar estes {matches.length} Cards</span>
+                        </button>
+                      )}
+                    </div>
+                  );
+                })()
+              )}
             </div>
 
             {/* Grid of the 4 Macro Disciplines com Drag and Drop Reordering */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {macroOrder.map((macro, index) => (
-                <MacroDisciplineCard
-                  key={macro.id}
-                  macro={macro}
-                  allCards={cards}
-                  deckProgressMap={deckProgressMap}
-                  onSelectTheme={handleSelectTheme}
-                  onStudyMacro={handleStudyMacro}
-                  isDragging={draggedMacroIndex === index}
-                  isDragTarget={dragOverMacroIndex === index}
-                  onDragStart={() => handleMacroDragStart(index)}
-                  onDragOver={(e) => handleMacroDragOver(e, index)}
-                  onDrop={(e) => handleMacroDrop(e, index)}
-                />
-              ))}
-            </div>
+            {(() => {
+              const displayedMacros = macroOrder.filter(macro => {
+                if (selectedMacroFilter !== 'all' && macro.id !== selectedMacroFilter) return false;
+                if (homeSearch.trim()) {
+                  const q = homeSearch.toLowerCase().trim();
+                  return cards.some(c =>
+                    c.macroId === macro.id && (
+                      c.question.toLowerCase().includes(q) ||
+                      c.answer.toLowerCase().includes(q) ||
+                      c.tags.some(t => t.toLowerCase().includes(q)) ||
+                      (c.tip && c.tip.toLowerCase().includes(q))
+                    )
+                  );
+                }
+                return true;
+              });
+
+              if (displayedMacros.length === 0) {
+                return (
+                  <div className="p-12 text-center rounded-3xl bg-white border border-zinc-200 shadow-xs space-y-3">
+                    <AlertOctagon className="w-10 h-10 text-zinc-400 mx-auto" />
+                    <h3 className="font-extrabold text-zinc-800 text-base">Nenhuma macro área encontrada</h3>
+                    <p className="text-xs text-zinc-500 max-w-md mx-auto">
+                      Nenhum flashcard corresponde ao termo de busca informado. Tente limpar os filtros para visualizar todas as matérias.
+                    </p>
+                    <button
+                      onClick={() => {
+                        setHomeSearch('');
+                        setSelectedMacroFilter('all');
+                      }}
+                      className="px-4 py-2 rounded-xl bg-zinc-900 text-white font-bold text-xs hover:bg-zinc-800 transition cursor-pointer"
+                    >
+                      Limpar Filtros e Busca
+                    </button>
+                  </div>
+                );
+              }
+
+              return (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  {displayedMacros.map((macro, index) => (
+                    <MacroDisciplineCard
+                      key={macro.id}
+                      macro={macro}
+                      allCards={cards}
+                      deckProgressMap={deckProgressMap}
+                      onSelectTheme={handleSelectTheme}
+                      onStudyMacro={handleStudyMacro}
+                      isDragging={draggedMacroIndex === index}
+                      isDragTarget={dragOverMacroIndex === index}
+                      onDragStart={() => handleMacroDragStart(index)}
+                      onDragOver={(e) => handleMacroDragOver(e, index)}
+                      onDrop={(e) => handleMacroDrop(e, index)}
+                    />
+                  ))}
+                </div>
+              );
+            })()}
 
             {/* Bottom Motivation Banner */}
             <div className="p-6 rounded-3xl bg-white border border-zinc-200 shadow-xs flex flex-col md:flex-row items-center justify-between gap-4">
