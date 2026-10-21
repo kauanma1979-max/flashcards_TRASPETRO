@@ -7,6 +7,7 @@ import {
   Check, 
   X, 
   Flame, 
+  ChevronLeft,
   ChevronRight, 
   Trophy, 
   Sparkles, 
@@ -108,6 +109,28 @@ export function StudySession({
     });
   }, []);
 
+  // Handle moving backward without answering
+  const handlePrevCard = useCallback(() => {
+    if (currentIndex > 0) {
+      stopSpeaking();
+      setIsSpeaking(false);
+      setIsFlipped(false);
+      setShowTip(false);
+      setCurrentIndex(prev => prev - 1);
+    }
+  }, [currentIndex]);
+
+  // Handle moving forward without answering
+  const handleNextCard = useCallback(() => {
+    if (currentIndex < cards.length - 1) {
+      stopSpeaking();
+      setIsSpeaking(false);
+      setIsFlipped(false);
+      setShowTip(false);
+      setCurrentIndex(prev => prev + 1);
+    }
+  }, [currentIndex, cards.length]);
+
   // Handle rating answer
   const handleRate = useCallback((rating: Rating) => {
     if (!currentCard) return;
@@ -173,6 +196,12 @@ export function StudySession({
       if (e.code === 'Space') {
         e.preventDefault();
         handleFlip();
+      } else if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        handlePrevCard();
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        handleNextCard();
       } else if (isFlipped) {
         if (e.key === '1') handleRate('errei');
         else if (e.key === '2') handleRate('dificil');
@@ -183,7 +212,7 @@ export function StudySession({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleFlip, handleRate, isFlipped]);
+  }, [handleFlip, handlePrevCard, handleNextCard, handleRate, isFlipped]);
 
   // Session summary calculation
   if (isCompleted) {
@@ -362,7 +391,7 @@ export function StudySession({
           </div>
         )}
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5">
           {/* Combo badge */}
           {combo > 1 && (
             <div className="flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-500 text-white font-extrabold text-xs shadow-xs animate-bounce">
@@ -371,34 +400,85 @@ export function StudySession({
             </div>
           )}
 
-          <span className="text-xs font-bold text-zinc-500 font-mono-numbers">
-            Card {currentIndex + 1} de {cards.length}
-          </span>
+          {/* Quick Arrow Nav in Header */}
+          <div className="flex items-center bg-zinc-100 p-1 rounded-xl border border-zinc-200">
+            <button
+              onClick={handlePrevCard}
+              disabled={currentIndex === 0}
+              title={currentIndex === 0 ? "Primeiro cartão" : "Passar para trás sem responder [Seta ←]"}
+              className={`p-1 rounded-lg transition ${
+                currentIndex === 0
+                  ? 'opacity-30 cursor-not-allowed text-zinc-400'
+                  : 'text-zinc-700 hover:bg-white hover:shadow-xs cursor-pointer'
+              }`}
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            <span className="text-xs font-bold text-zinc-700 font-mono-numbers px-2">
+              {currentIndex + 1} / {cards.length}
+            </span>
+            <button
+              onClick={handleNextCard}
+              disabled={currentIndex >= cards.length - 1}
+              title={currentIndex >= cards.length - 1 ? "Último cartão" : "Passar para frente sem responder [Seta →]"}
+              className={`p-1 rounded-lg transition ${
+                currentIndex >= cards.length - 1
+                  ? 'opacity-30 cursor-not-allowed text-zinc-400'
+                  : 'text-zinc-700 hover:bg-white hover:shadow-xs cursor-pointer'
+              }`}
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
         </div>
       </div>
 
       {/* Progress Bar */}
-      <div className="w-full bg-zinc-200 rounded-full h-2 mb-6 overflow-hidden">
+      <div className="w-full bg-zinc-200 rounded-full h-2 mb-4 overflow-hidden">
         <div 
           className="bg-emerald-600 h-full rounded-full transition-all duration-300"
           style={{ width: `${progressPercent}%` }}
         />
       </div>
 
-      {/* 3D Flashcard Container */}
-      <div className="perspective-1000 min-h-[380px] sm:min-h-[420px] select-none">
-        <div 
-          onClick={handleFlip}
-          className={`w-full h-full min-h-[380px] sm:min-h-[420px] rounded-3xl cursor-pointer transition-transform duration-500 transform-style-3d relative shadow-lg hover:shadow-xl border border-zinc-200/90 ${
-            isFlipped ? 'rotate-y-180' : ''
+      {/* Main Card Stage with Flanking Arrow Buttons (Passar sem responder) */}
+      <div className="relative flex items-center justify-between gap-2 sm:gap-3.5">
+        
+        {/* Seta Esquerda Lateral: Passar para trás sem responder */}
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            handlePrevCard();
+          }}
+          disabled={currentIndex === 0}
+          title={currentIndex === 0 ? "Primeiro cartão da sessão" : "Passar para trás sem responder [Seta ←]"}
+          aria-label="Passar para trás sem responder"
+          className={`hidden md:flex flex-col items-center justify-center p-3 sm:p-3.5 rounded-2xl border transition-all duration-150 shrink-0 shadow-sm group ${
+            currentIndex === 0
+              ? 'opacity-25 cursor-not-allowed bg-zinc-100 border-zinc-200 text-zinc-400'
+              : 'bg-white hover:bg-emerald-50 hover:border-emerald-400 text-zinc-700 hover:text-emerald-800 active:scale-95 cursor-pointer shadow-zinc-200/50'
           }`}
         >
-          
-          {/* ======================================================== */}
-          {/* FRONT SIDE (Question) */}
-          {/* ======================================================== */}
-          <div className="absolute inset-0 w-full h-full bg-white rounded-3xl p-6 sm:p-8 flex flex-col justify-between backface-hidden">
-            <div>
+          <ChevronLeft className="w-6 h-6 transition-transform group-hover:-translate-x-0.5" />
+          <span className="text-[10px] font-bold text-zinc-500 mt-1">Voltar</span>
+          <kbd className="text-[9px] font-mono text-zinc-400 bg-zinc-100 px-1 rounded mt-0.5">←</kbd>
+        </button>
+
+        {/* 3D Flashcard Container */}
+        <div className="flex-1 perspective-1000 min-h-[380px] sm:min-h-[420px] select-none">
+          <div 
+            onClick={handleFlip}
+            className={`w-full h-full min-h-[380px] sm:min-h-[420px] rounded-3xl cursor-pointer transition-transform duration-500 transform-style-3d relative shadow-lg hover:shadow-xl border border-zinc-200/90 ${
+              isFlipped ? 'rotate-y-180' : ''
+            }`}
+          >
+            
+            {/* ======================================================== */}
+            {/* FRONT SIDE (Question) */}
+            {/* ======================================================== */}
+            <div className="absolute inset-0 w-full h-full bg-white rounded-3xl p-6 sm:p-8 flex flex-col justify-between backface-hidden">
+              <div>
               {/* Top Card Info Bar */}
               <div className="flex items-center justify-between gap-2 mb-4">
                 <div className="flex items-center gap-2 flex-wrap">
@@ -570,16 +650,82 @@ export function StudySession({
         </div>
       </div>
 
+        {/* Seta Direita Lateral: Passar para frente sem responder */}
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            handleNextCard();
+          }}
+          disabled={currentIndex >= cards.length - 1}
+          title={currentIndex >= cards.length - 1 ? "Último cartão da sessão" : "Passar para frente sem responder [Seta →]"}
+          aria-label="Passar para frente sem responder"
+          className={`hidden md:flex flex-col items-center justify-center p-3 sm:p-3.5 rounded-2xl border transition-all duration-150 shrink-0 shadow-sm group ${
+            currentIndex >= cards.length - 1
+              ? 'opacity-25 cursor-not-allowed bg-zinc-100 border-zinc-200 text-zinc-400'
+              : 'bg-white hover:bg-emerald-50 hover:border-emerald-400 text-zinc-700 hover:text-emerald-800 active:scale-95 cursor-pointer shadow-zinc-200/50'
+          }`}
+        >
+          <ChevronRight className="w-6 h-6 transition-transform group-hover:translate-x-0.5" />
+          <span className="text-[10px] font-bold text-zinc-500 mt-1">Avançar</span>
+          <kbd className="text-[9px] font-mono text-zinc-400 bg-zinc-100 px-1 rounded mt-0.5">→</kbd>
+        </button>
+      </div>
+
+      {/* Barra de Navegação com Setas (Passar o cartão pra frente ou pra trás sem responder) */}
+      <div className="mt-3 flex items-center justify-between gap-2 px-3 py-2.5 rounded-2xl bg-white border border-zinc-200/90 shadow-2xs">
+        <button
+          type="button"
+          onClick={handlePrevCard}
+          disabled={currentIndex === 0}
+          className={`flex items-center gap-1.5 font-bold text-xs px-3.5 py-2 rounded-xl border transition ${
+            currentIndex === 0
+              ? 'opacity-30 cursor-not-allowed bg-zinc-100 border-zinc-200 text-zinc-400'
+              : 'bg-zinc-50 hover:bg-emerald-50 hover:border-emerald-300 text-zinc-700 hover:text-emerald-900 border-zinc-200 active:scale-95 cursor-pointer'
+          }`}
+          title="Passar para o cartão anterior sem responder [Seta ←]"
+        >
+          <ChevronLeft className="w-4 h-4 text-emerald-700 shrink-0" />
+          <span>Cartão Anterior</span>
+          <kbd className="hidden sm:inline px-1 py-0.5 bg-zinc-200/70 rounded text-[10px] text-zinc-600 font-mono">←</kbd>
+        </button>
+
+        <div className="flex flex-col sm:flex-row items-center gap-1 sm:gap-2 text-center">
+          <span className="text-[11px] font-medium text-zinc-500">
+            Navegue sem responder:
+          </span>
+          <span className="text-xs font-extrabold text-emerald-900 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md font-mono-numbers">
+            Card {currentIndex + 1} de {cards.length}
+          </span>
+        </div>
+
+        <button
+          type="button"
+          onClick={handleNextCard}
+          disabled={currentIndex >= cards.length - 1}
+          className={`flex items-center gap-1.5 font-bold text-xs px-3.5 py-2 rounded-xl border transition ${
+            currentIndex >= cards.length - 1
+              ? 'opacity-30 cursor-not-allowed bg-zinc-100 border-zinc-200 text-zinc-400'
+              : 'bg-zinc-50 hover:bg-emerald-50 hover:border-emerald-300 text-zinc-700 hover:text-emerald-900 border-zinc-200 active:scale-95 cursor-pointer'
+          }`}
+          title="Passar para o próximo cartão sem responder [Seta →]"
+        >
+          <span>Próximo Cartão</span>
+          <kbd className="hidden sm:inline px-1 py-0.5 bg-zinc-200/70 rounded text-[10px] text-zinc-600 font-mono">→</kbd>
+          <ChevronRight className="w-4 h-4 text-emerald-700 shrink-0" />
+        </button>
+      </div>
+
       {/* Spaced Repetition Rating Controls */}
-      <div className="mt-6">
+      <div className="mt-4">
         {isFlipped ? (
-          <div className="animate-in fade-in slide-in-from-bottom-2 duration-200">
+          <div className="animate-in fade-in slide-in-from-bottom-2 duration-200 space-y-3">
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
               
               {/* ERREI (1) */}
               <button
                 onClick={() => handleRate('errei')}
-                className="p-3.5 rounded-2xl bg-rose-50 hover:bg-rose-100 border border-rose-300 text-rose-800 font-bold transition flex flex-col items-center justify-center gap-0.5 shadow-xs active:scale-95 group"
+                className="p-3.5 rounded-2xl bg-rose-50 hover:bg-rose-100 border border-rose-300 text-rose-800 font-bold transition flex flex-col items-center justify-center gap-0.5 shadow-xs active:scale-95 group cursor-pointer"
               >
                 <div className="flex items-center gap-1 text-sm font-extrabold">
                   <X className="w-4 h-4 text-rose-600 group-hover:scale-110 transition" />
@@ -592,7 +738,7 @@ export function StudySession({
               {/* DIFÍCIL (2) */}
               <button
                 onClick={() => handleRate('dificil')}
-                className="p-3.5 rounded-2xl bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-800 font-bold transition flex flex-col items-center justify-center gap-0.5 shadow-xs active:scale-95 group"
+                className="p-3.5 rounded-2xl bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-800 font-bold transition flex flex-col items-center justify-center gap-0.5 shadow-xs active:scale-95 group cursor-pointer"
               >
                 <div className="flex items-center gap-1 text-sm font-extrabold">
                   <span>Difícil</span>
@@ -604,7 +750,7 @@ export function StudySession({
               {/* BOM (3) */}
               <button
                 onClick={() => handleRate('bom')}
-                className="p-3.5 rounded-2xl bg-blue-50 hover:bg-blue-100 border border-blue-300 text-blue-800 font-bold transition flex flex-col items-center justify-center gap-0.5 shadow-xs active:scale-95 group"
+                className="p-3.5 rounded-2xl bg-blue-50 hover:bg-blue-100 border border-blue-300 text-blue-800 font-bold transition flex flex-col items-center justify-center gap-0.5 shadow-xs active:scale-95 group cursor-pointer"
               >
                 <div className="flex items-center gap-1 text-sm font-extrabold">
                   <Check className="w-4 h-4 text-blue-600 group-hover:scale-110 transition" />
@@ -617,7 +763,7 @@ export function StudySession({
               {/* FÁCIL (4) */}
               <button
                 onClick={() => handleRate('facil')}
-                className="p-3.5 rounded-2xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 text-emerald-800 font-bold transition flex flex-col items-center justify-center gap-0.5 shadow-xs active:scale-95 group"
+                className="p-3.5 rounded-2xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 text-emerald-800 font-bold transition flex flex-col items-center justify-center gap-0.5 shadow-xs active:scale-95 group cursor-pointer"
               >
                 <div className="flex items-center gap-1 text-sm font-extrabold">
                   <Sparkles className="w-4 h-4 text-emerald-600 group-hover:scale-110 transition" />
@@ -628,12 +774,25 @@ export function StudySession({
               </button>
 
             </div>
+
+            {/* Option to skip without rating even after flipping */}
+            <div className="flex items-center justify-center pt-1">
+              <button
+                type="button"
+                onClick={handleNextCard}
+                disabled={currentIndex >= cards.length - 1}
+                className="text-xs font-semibold text-zinc-500 hover:text-zinc-800 hover:underline flex items-center gap-1 cursor-pointer transition disabled:opacity-30 disabled:pointer-events-none"
+              >
+                <span>Pular para o próximo cartão sem registrar nota</span>
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
           </div>
         ) : (
           <div className="flex items-center justify-center">
             <button
               onClick={handleFlip}
-              className="w-full sm:w-auto px-8 py-3.5 rounded-2xl bg-emerald-700 hover:bg-emerald-800 text-white font-extrabold text-sm shadow-md transition flex items-center justify-center gap-2"
+              className="w-full sm:w-auto px-8 py-3.5 rounded-2xl bg-emerald-700 hover:bg-emerald-800 text-white font-extrabold text-sm shadow-md transition flex items-center justify-center gap-2 cursor-pointer"
             >
               <RotateCw className="w-4 h-4" />
               <span>Mostrar Resposta e Justificativa</span>
